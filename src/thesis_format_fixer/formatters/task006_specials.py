@@ -22,6 +22,7 @@ SMALL_FOUR_HALF_PT = "24"  # 12pt
 SINGLE_SPACING_TWIPS = "240"
 LINE_25PT_TWIPS = "500"
 REFERENCE_ENTRY_STRONG_RE = re.compile(r"^\s*\[(\d+)\]\s*\S+")
+SENTENCE_LIKE_EN_RE = re.compile(r"^[A-Z][a-z]+\s+[a-z]{2,}\b")
 AUTHOR_ENTRY_EN_RE = re.compile(
     r"^[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*"
     r"(?:\s*,\s*[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*)*"
@@ -36,6 +37,16 @@ AUTHOR_ENTRY_ZH_RE = re.compile(
     r"\s*[，,.;。:：]"
 )
 AUTHOR_LEADING_EN_EXCLUDE_PREFIXES: set[str] = {
+    "acknowledgements",
+    "acknowledgments",
+    "appendix",
+    "appendices",
+    "introduction",
+    "conclusion",
+    "discussion",
+    "references",
+    "note",
+    "notes",
     "master",
     "thesis",
     "dissertation",
@@ -46,6 +57,39 @@ AUTHOR_LEADING_EN_EXCLUDE_PREFIXES: set[str] = {
     "vol",
     "volume",
 }
+REFERENCE_CONTINUATION_HINT_RE = re.compile(
+    r"^(?:"
+    r"\(?\d{4}\)?"
+    r"|vol\.?\s*\d+"
+    r"|no\.?\s*\d+"
+    r"|pp?\.?\s*\d+"
+    r"|doi[:\s]"
+    r"|https?://"
+    r"|[(),.;:，。；：]"
+    r")",
+    re.IGNORECASE,
+)
+REFERENCE_CONTINUATION_KEYWORDS: tuple[str, ...] = (
+    "journal",
+    "press",
+    "publisher",
+    "proceedings",
+    "thesis",
+    "dissertation",
+    "report",
+    "university",
+    "vol.",
+    "volume",
+    "no.",
+    "pp.",
+    "doi",
+    "出版社",
+    "学位论文",
+    "报告",
+    "卷",
+    "期",
+    "页",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -411,6 +455,17 @@ def _collect_reference_entries(
         if _looks_like_new_section_heading(text):
             break
 
+        if current_paragraphs and _looks_like_reference_continuation_line(text):
+            current_paragraphs.append(paragraphs[idx])
+            current_texts.append(text)
+            continue
+
+        if current_paragraphs:
+            flush()
+            skipped.append(idx)
+            pre_entry_noise = 1
+            continue
+
         current_paragraphs.append(paragraphs[idx])
         current_texts.append(text)
 
@@ -436,6 +491,7 @@ def _is_reference_stop_heading(text: str) -> bool:
         "acknowledgements",
         "acknowledgments",
         "appendix",
+        "appendices",
         "附录",
         "contents",
         "目录",
@@ -468,12 +524,30 @@ def _looks_like_author_leading_entry_start(text: str) -> bool:
         return False
     if _looks_like_new_section_heading(stripped):
         return False
+    if SENTENCE_LIKE_EN_RE.match(stripped):
+        return False
     first_word_match = re.match(r"^([A-Za-z]+)", stripped)
     if first_word_match is not None and first_word_match.group(1).casefold() in AUTHOR_LEADING_EN_EXCLUDE_PREFIXES:
         return False
     if AUTHOR_ENTRY_EN_RE.match(stripped):
         return True
     if AUTHOR_ENTRY_ZH_RE.match(stripped):
+        return True
+    return False
+
+
+def _looks_like_reference_continuation_line(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _looks_like_new_section_heading(stripped):
+        return False
+    if REFERENCE_CONTINUATION_HINT_RE.match(stripped):
+        return True
+    lowered = stripped.casefold()
+    if any(keyword in lowered for keyword in REFERENCE_CONTINUATION_KEYWORDS):
+        return True
+    if stripped[:1].islower():
         return True
     return False
 

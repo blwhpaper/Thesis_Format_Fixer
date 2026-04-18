@@ -136,6 +136,50 @@ def test_references_entries_detect_chinese_author_leading_fallback() -> None:
     assert scan.entry_group_sources == ("author_leading_fallback", "author_leading_fallback")
 
 
+def test_non_references_body_name_like_english_paragraph_not_triggered() -> None:
+    context = _context(
+        [
+            "1 Introduction",
+            "Smith and Brown discussed this problem in detail and proposed a new framework.",
+            "This paragraph belongs to body text, not references.",
+        ]
+    )
+
+    block_map = locate_blocks(context)
+
+    assert block_map.blocks["references_title"].start_paragraph is None
+    assert block_map.blocks["references_entries"].start_paragraph is None
+
+
+def test_references_stop_headings_are_not_absorbed_as_entries() -> None:
+    paragraphs = (
+        "REFERENCES",
+        "Smith, J. Journal of Testing, 2026.",
+        "Acknowledgements",
+        "Thanks to everyone.",
+    )
+    scan = scan_reference_entries(paragraphs, heading_index=0, hard_stop_index=4)
+
+    assert len(scan.entry_groups) == 1
+    assert scan.entry_groups[0] == (1,)
+    assert scan.stop_reason == "explicit_stop_heading"
+
+
+def test_adjacent_author_leading_entries_are_not_merged() -> None:
+    paragraphs = (
+        "REFERENCES",
+        "Smith, J. Journal of Testing, 2026.",
+        "Wang, Q. Another Study. 2025.",
+        "Appendix",
+    )
+    scan = scan_reference_entries(paragraphs, heading_index=0, hard_stop_index=3)
+
+    assert len(scan.entry_groups) == 2
+    assert scan.entry_groups[0] == (1,)
+    assert scan.entry_groups[1] == (2,)
+    assert scan.entry_group_sources == ("author_leading_fallback", "author_leading_fallback")
+
+
 def test_references_entries_numbered_and_author_leading_can_coexist() -> None:
     paragraphs = (
         "REFERENCES",

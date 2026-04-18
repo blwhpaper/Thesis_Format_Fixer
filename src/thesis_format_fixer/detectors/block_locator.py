@@ -39,6 +39,7 @@ HEADING_2_RE = re.compile(r"^\s*\d+\.\d+\s+\S+")
 HEADING_3_RE = re.compile(r"^\s*\d+\.\d+\.\d+\s+\S+")
 REFERENCE_ENTRY_STRONG_RE = re.compile(r"^\s*\[(\d+)\]\s*\S+")
 SHORT_HEADING_RE = re.compile(r"^[A-Z][A-Z\s]{2,30}$")
+SENTENCE_LIKE_EN_RE = re.compile(r"^[A-Z][a-z]+\s+[a-z]{2,}\b")
 AUTHOR_ENTRY_EN_RE = re.compile(
     r"^[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*"
     r"(?:\s*,\s*[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*)*"
@@ -54,6 +55,16 @@ AUTHOR_ENTRY_ZH_RE = re.compile(
 )
 AUTHOR_LEADING_EN_EXCLUDE_PREFIXES: frozenset[str] = frozenset(
     {
+        "acknowledgements",
+        "acknowledgments",
+        "appendix",
+        "appendices",
+        "introduction",
+        "conclusion",
+        "discussion",
+        "references",
+        "note",
+        "notes",
         "master",
         "thesis",
         "dissertation",
@@ -72,6 +83,7 @@ REFERENCE_SECTION_STOP_HEADINGS: frozenset[str] = frozenset(
         "acknowledgements",
         "acknowledgments",
         "appendix",
+        "appendices",
         "附录",
         "contents",
         "目录",
@@ -81,6 +93,39 @@ REFERENCE_SECTION_STOP_HEADINGS: frozenset[str] = frozenset(
         "references",
         "参考文献",
     }
+)
+REFERENCE_CONTINUATION_HINT_RE = re.compile(
+    r"^(?:"
+    r"\(?\d{4}\)?"
+    r"|vol\.?\s*\d+"
+    r"|no\.?\s*\d+"
+    r"|pp?\.?\s*\d+"
+    r"|doi[:\s]"
+    r"|https?://"
+    r"|[(),.;:，。；：]"
+    r")",
+    re.IGNORECASE,
+)
+REFERENCE_CONTINUATION_KEYWORDS: tuple[str, ...] = (
+    "journal",
+    "press",
+    "publisher",
+    "proceedings",
+    "thesis",
+    "dissertation",
+    "report",
+    "university",
+    "vol.",
+    "volume",
+    "no.",
+    "pp.",
+    "doi",
+    "出版社",
+    "学位论文",
+    "报告",
+    "卷",
+    "期",
+    "页",
 )
 
 
@@ -159,12 +204,30 @@ def _looks_like_author_leading_entry_start(text: str) -> bool:
         return False
     if _looks_like_new_section_heading(stripped):
         return False
+    if SENTENCE_LIKE_EN_RE.match(stripped):
+        return False
     first_word_match = re.match(r"^([A-Za-z]+)", stripped)
     if first_word_match is not None and first_word_match.group(1).casefold() in AUTHOR_LEADING_EN_EXCLUDE_PREFIXES:
         return False
     if AUTHOR_ENTRY_EN_RE.match(stripped):
         return True
     if AUTHOR_ENTRY_ZH_RE.match(stripped):
+        return True
+    return False
+
+
+def _looks_like_reference_continuation_line(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _looks_like_new_section_heading(stripped):
+        return False
+    if REFERENCE_CONTINUATION_HINT_RE.match(stripped):
+        return True
+    lowered = stripped.casefold()
+    if any(keyword in lowered for keyword in REFERENCE_CONTINUATION_KEYWORDS):
+        return True
+    if stripped[:1].islower():
         return True
     return False
 
@@ -240,6 +303,17 @@ def scan_reference_entries(
         if _looks_like_new_section_heading(text):
             stop_reason = "new_section_after_entries"
             break
+
+        if current_group and _looks_like_reference_continuation_line(text):
+            current_group.append(idx)
+            continue
+
+        if current_group:
+            _flush_current()
+            skipped.append(idx)
+            suspicious_unrecognized.append(idx)
+            pre_entry_noise = 1
+            continue
 
         current_group.append(idx)
 
