@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 from thesis_format_fixer.contracts.report_types import ExecutionReport, RuleExecutionRecord
+from thesis_format_fixer.contracts.review_types import IntelligentReviewReport
 from thesis_format_fixer.contracts.rule_types import RuleDecision
 
 
 
-def build_report(records: list[RuleExecutionRecord]) -> ExecutionReport:
+def build_report(
+    records: list[RuleExecutionRecord],
+    *,
+    intelligent_review: IntelligentReviewReport | None = None,
+) -> ExecutionReport:
     auto_fixed: list[RuleExecutionRecord] = []
     auto_checked: list[RuleExecutionRecord] = []
     report_only: list[RuleExecutionRecord] = []
@@ -33,4 +38,5 @@ def build_report(records: list[RuleExecutionRecord]) -> ExecutionReport:
         auto_checked=tuple(auto_checked),
         report_only=tuple(report_only),
         excluded_by_scope=tuple(excluded_by_scope),
+        intelligent_review=intelligent_review,
     )

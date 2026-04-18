@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from thesis_format_fixer.contracts.review_types import IntelligentReviewReport
 from thesis_format_fixer.contracts.rule_types import RuleDecision
 
 
@@ -41,3 +42,4 @@ class ExecutionReport:
     auto_checked: tuple[RuleExecutionRecord, ...]
     report_only: tuple[RuleExecutionRecord, ...]
     excluded_by_scope: tuple[RuleExecutionRecord, ...]
+    intelligent_review: IntelligentReviewReport | None = None

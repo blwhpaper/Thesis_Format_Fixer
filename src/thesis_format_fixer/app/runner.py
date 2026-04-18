@@ -10,10 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from thesis_format_fixer.contracts.report_types import RuleExecutionRecord
+from thesis_format_fixer.contracts.review_types import IntelligentReviewReport, ReviewFinding
 from thesis_format_fixer.detectors.block_locator import locate_blocks
 from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.reporters.report_builder import build_report
+from thesis_format_fixer.review.model_adapter import LocalModelAdapter
+from thesis_format_fixer.review.reviewer import REVIEW_TARGETS, ReviewConfig, Reviewer
 from thesis_format_fixer.rules.registry import RuleRegistry
 
 
@@ -42,6 +45,46 @@ def _derive_report_paths(output_docx: Path) -> tuple[Path, Path]:
     report_json = output_docx.with_suffix(".report.json")
     report_md = output_docx.with_suffix(".report.md")
     return report_json, report_md
+
+
+def _normalize_review_targets(raw: str | tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+    if raw is None:
+        return REVIEW_TARGETS
+    if isinstance(raw, str):
+        parts = [item.strip() for item in raw.split(",")]
+    else:
+        parts = [str(item).strip() for item in raw]
+    targets = tuple(item for item in parts if item in REVIEW_TARGETS)
+    if not targets:
+        return REVIEW_TARGETS
+    # Keep deterministic order.
+    return tuple(item for item in REVIEW_TARGETS if item in targets)
+
+
+def _review_finding_to_payload(item: ReviewFinding) -> dict[str, Any]:
+    return {
+        "rule_id": item.rule_id,
+        "block_id": item.block_id,
+        "block_type": item.block_type,
+        "target": item.target,
+        "decision": item.decision.value,
+        "confidence": item.confidence,
+        "evidence": [asdict(evidence) for evidence in item.evidence],
+        "suggestion": item.suggestion,
+        "auto_fix_allowed": item.auto_fix_allowed,
+        "source": item.source,
+    }
+
+
+def _intelligent_review_payload(report: IntelligentReviewReport) -> dict[str, Any]:
+    return {
+        "status": report.status.value,
+        "mode": report.mode,
+        "targets": list(report.targets),
+        "degraded_reasons": list(report.degraded_reasons),
+        "findings": [_review_finding_to_payload(item) for item in report.findings],
+        "metadata": dict(report.metadata),
+    }
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -125,11 +168,38 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     else:
         lines.append("- (none)")
 
+    intelligent_review = sections.get("intelligent_review")
+    if intelligent_review is not None:
+        lines.extend(["", "## 智能审查结果", ""])
+        lines.append(f"- status: {intelligent_review['status']}")
+        lines.append(f"- mode: {intelligent_review['mode']}")
+        if intelligent_review["degraded_reasons"]:
+            lines.append(f"- degraded_reasons: {', '.join(intelligent_review['degraded_reasons'])}")
+        findings = intelligent_review["findings"]
+        if findings:
+            for item in findings:
+                lines.append(
+                    "- "
+                    + f"{item['rule_id']} [{item['decision']}] "
+                    + f"source={item['source']} target={item['target']} "
+                    + f"confidence={item['confidence']:.2f}"
+                )
+        else:
+            lines.append("- findings: (none)")
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) -> dict[str, Any]:
+def _build_single_payload(
+    input_file: Path,
+    *,
+    output_docx: Path | None = None,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+    model_adapter: LocalModelAdapter | None = None,
+) -> dict[str, Any]:
     working_file = output_docx if output_docx is not None else input_file
     context = load_document(working_file)
     block_map = locate_blocks(context)
@@ -140,7 +210,16 @@ def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) 
         task006 = execute_task006_docx(working_file, apply_fixes=output_docx is not None)
         _merge_rule_updates(records, task006.updates)
 
-    report = build_report(records)
+    review_report = None
+    if review_mode.lower().strip() != "off":
+        review_config = ReviewConfig(
+            mode=review_mode,
+            targets=_normalize_review_targets(review_targets),
+            local_model=review_local_model,
+        )
+        review_report = Reviewer(review_config, adapter=model_adapter).run(context, block_map)
+
+    report = build_report(records, intelligent_review=review_report)
 
     auto_fixed = [
         _record_to_payload(item, registry=registry) for item in report.auto_fixed if item.status == "fixed"
@@ -182,6 +261,18 @@ def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) 
             }
         )
 
+    sections: dict[str, Any] = {
+        "auto_fixed": auto_fixed,
+        "auto_fixed_footnotes": auto_fixed_footnotes,
+        "auto_fixed_bibliography": auto_fixed_bibliography,
+        "detected_not_auto_modified": detected_not_auto_modified,
+        "detected_special_issues_not_modified": detected_special_issues_not_modified,
+        "manual_review_required": manual_review_required,
+    }
+
+    if report.intelligent_review is not None:
+        sections["intelligent_review"] = _intelligent_review_payload(report.intelligent_review)
+
     return {
         "schema_version": "task-006-report-v1",
         "generated_at": _utc_now_iso(),
@@ -199,15 +290,14 @@ def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) 
                 for block in block_map.blocks.values()
                 if block.confidence < BLOCK_CONFIDENCE_REVIEW_THRESHOLD
             ),
+            "intelligent_review_finding_count": len(report.intelligent_review.findings)
+            if report.intelligent_review is not None
+            else 0,
+            "intelligent_review_degraded_count": len(report.intelligent_review.degraded_reasons)
+            if report.intelligent_review is not None
+            else 0,
         },
-        "sections": {
-            "auto_fixed": auto_fixed,
-            "auto_fixed_footnotes": auto_fixed_footnotes,
-            "auto_fixed_bibliography": auto_fixed_bibliography,
-            "detected_not_auto_modified": detected_not_auto_modified,
-            "detected_special_issues_not_modified": detected_special_issues_not_modified,
-            "manual_review_required": manual_review_required,
-        },
+        "sections": sections,
         "capabilities": asdict(context.capabilities),
         "blocks": {
             key: {
@@ -225,12 +315,23 @@ def _run_single(
     output_docx: Path | None,
     report_json_out: Path | None,
     report_md_out: Path | None,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+    model_adapter: LocalModelAdapter | None = None,
 ) -> tuple[int, dict[str, Any], Path | None, Path | None]:
     if output_docx is not None:
         output_docx.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(input_file, output_docx)
 
-    payload = _build_single_payload(input_file, output_docx=output_docx)
+    payload = _build_single_payload(
+        input_file,
+        output_docx=output_docx,
+        review_mode=review_mode,
+        review_targets=review_targets,
+        review_local_model=review_local_model,
+        model_adapter=model_adapter,
+    )
 
     final_json_out: Path | None = report_json_out
     final_md_out: Path | None = report_md_out
@@ -291,7 +392,16 @@ def _merge_rule_updates(records: list[RuleExecutionRecord], updates: dict[str, A
 
 
 
-def run_check(input_file: Path, *, report_json_out: Path | None = None, report_md_out: Path | None = None) -> int:
+def run_check(
+    input_file: Path,
+    *,
+    report_json_out: Path | None = None,
+    report_md_out: Path | None = None,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+    model_adapter: LocalModelAdapter | None = None,
+) -> int:
     if not input_file.exists():
         print(f"输入文件不存在: {input_file}")
         return 2
@@ -301,6 +411,10 @@ def run_check(input_file: Path, *, report_json_out: Path | None = None, report_m
         output_docx=None,
         report_json_out=report_json_out,
         report_md_out=report_md_out,
+        review_mode=review_mode,
+        review_targets=review_targets,
+        review_local_model=review_local_model,
+        model_adapter=model_adapter,
     )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return code
@@ -313,6 +427,10 @@ def run_fix(
     *,
     report_json_out: Path | None = None,
     report_md_out: Path | None = None,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+    model_adapter: LocalModelAdapter | None = None,
 ) -> int:
     if not input_file.exists():
         print(f"输入文件不存在: {input_file}")
@@ -327,6 +445,10 @@ def run_fix(
         output_docx=output_file,
         report_json_out=report_json_out,
         report_md_out=report_md_out,
+        review_mode=review_mode,
+        review_targets=review_targets,
+        review_local_model=review_local_model,
+        model_adapter=model_adapter,
     )
     print(
         json.dumps(
@@ -344,7 +466,15 @@ def run_fix(
     return code
 
 
-def run_batch_fix(input_dir: Path, output_dir: Path, *, recursive: bool = True) -> int:
+def run_batch_fix(
+    input_dir: Path,
+    output_dir: Path,
+    *,
+    recursive: bool = True,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+) -> int:
     if not input_dir.exists() or not input_dir.is_dir():
         print(f"输入目录不存在或不可用: {input_dir}")
         return 2
@@ -370,6 +500,9 @@ def run_batch_fix(input_dir: Path, output_dir: Path, *, recursive: bool = True) 
                 output_docx=output_docx,
                 report_json_out=report_json,
                 report_md_out=report_md,
+                review_mode=review_mode,
+                review_targets=review_targets,
+                review_local_model=review_local_model,
             )
         except Exception as exc:  # pragma: no cover - defensive path
             code = 1

@@ -2,7 +2,7 @@
 
 `thesis-format-fixer` is a Python CLI project for checking and fixing **English graduation thesis DOCX formatting** against a rulebook.
 
-Current stage: **TASK-005 report + batch pipeline skeleton**.
+Current stage: **TASK-007 V2 review layer (safe check-only extension)**.
 
 ## Project Purpose
 
@@ -22,7 +22,7 @@ Current stage: **TASK-005 report + batch pipeline skeleton**.
 - Cover-page reconstruction.
 - Page numbering / section / footnote reflow.
 - GUI.
-- Any TASK-006/TASK-007 scope.
+- Any beyond current TASK-007 minimal review scope.
 
 ## Install
 
@@ -40,6 +40,11 @@ pip install -e .
 thesis-format-fixer check samples/input/demo.docx \
   --report-json samples/output/demo.check.report.json \
   --report-md samples/output/demo.check.report.md
+
+# Single-file check + V2 review (rule-engine only)
+thesis-format-fixer check samples/input/demo.docx \
+  --review-mode basic \
+  --review-target headings,references,pagination
 
 # Single-file fix mode (V1 keeps safe passthrough copy + report)
 thesis-format-fixer fix samples/input/demo.docx \
