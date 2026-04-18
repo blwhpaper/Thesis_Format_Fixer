@@ -2,7 +2,7 @@
 
 `thesis-format-fixer` is a Python CLI project for checking and fixing **English graduation thesis DOCX formatting** against a rulebook.
 
-Current stage: **project skeleton only** (TASK-001). No real formatting fix logic is implemented yet.
+Current stage: **TASK-005 report + batch pipeline skeleton**.
 
 ## Project Purpose
 
@@ -18,11 +18,11 @@ Current stage: **project skeleton only** (TASK-001). No real formatting fix logi
 
 ## Not Supported (Current)
 
-- DOCX formatting repair logic (not implemented yet).
+- DOCX formatting deep repair logic (still guarded by V1 scope).
 - Cover-page reconstruction.
 - Page numbering / section / footnote reflow.
 - GUI.
-- Any TASK-002+ scope.
+- Any TASK-006/TASK-007 scope.
 
 ## Install
 
@@ -36,11 +36,32 @@ pip install -e .
 ## CLI Examples
 
 ```bash
-thesis-format-fixer check samples/input/demo.docx
-thesis-format-fixer fix samples/input/demo.docx --out samples/output/demo.fixed.docx
+# Single-file check (optional report output)
+thesis-format-fixer check samples/input/demo.docx \
+  --report-json samples/output/demo.check.report.json \
+  --report-md samples/output/demo.check.report.md
+
+# Single-file fix mode (V1 keeps safe passthrough copy + report)
+thesis-format-fixer fix samples/input/demo.docx \
+  --out samples/output/demo.fixed.docx
+
+# Batch fix mode (recursive by default)
+thesis-format-fixer batch-fix samples/input \
+  --out-dir samples/output/batch
 ```
 
-Current behavior: validates arguments, prints `待实现`, exits with meaningful status code.
+Output convention:
+
+- Single `fix`:
+  - fixed docx: `*.fixed.docx`
+  - report json: `*.report.json` (default: same path stem as output docx)
+  - report md: `*.report.md` (default: same path stem as output docx)
+- Batch `batch-fix`:
+  - each input docx gets independent `*.fixed.docx` + `*.report.json` + `*.report.md`
+  - keeps relative directory structure from input dir
+  - batch summary:
+    - `batch_summary.json`
+    - `batch_summary.md`
 
 ## Rule Sources in Repository
 
