@@ -9,7 +9,7 @@ def test_runtime_whitelist_equals_auto_fix_decision_set() -> None:
 
 
 def test_write_back_rejected_for_non_whitelist_rule() -> None:
-    non_whitelist_rule = "FR-4.6-02"  # Report Only
+    non_whitelist_rule = "FR-4.6-05"  # Report Only
     try:
         guard_write_back(non_whitelist_rule)
     except WhitelistViolationError:

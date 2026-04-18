@@ -2,10 +2,35 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from thesis_format_fixer.contracts.report_types import ExecutionReport, RuleExecutionRecord
 from thesis_format_fixer.contracts.review_types import IntelligentReviewReport
 from thesis_format_fixer.contracts.rule_types import RuleDecision
 
+
+@dataclass(frozen=True, slots=True)
+class AClassHitSurface:
+    hit: tuple[RuleExecutionRecord, ...]
+    unhit: tuple[RuleExecutionRecord, ...]
+    degraded: tuple[RuleExecutionRecord, ...]
+
+
+def summarize_a_class_hit_surface(records: list[RuleExecutionRecord]) -> AClassHitSurface:
+    hit: list[RuleExecutionRecord] = []
+    unhit: list[RuleExecutionRecord] = []
+    degraded: list[RuleExecutionRecord] = []
+    for item in records:
+        if item.decision is not RuleDecision.AUTO_FIX:
+            continue
+        if item.status in {"fixed", "checked_ok"}:
+            hit.append(item)
+            continue
+        if item.status in {"detected_not_modified"}:
+            degraded.append(item)
+            continue
+        unhit.append(item)
+    return AClassHitSurface(hit=tuple(hit), unhit=tuple(unhit), degraded=tuple(degraded))
 
 
 def build_report(

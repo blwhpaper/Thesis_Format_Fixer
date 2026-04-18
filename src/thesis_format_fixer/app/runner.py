@@ -13,8 +13,9 @@ from thesis_format_fixer.contracts.report_types import RuleExecutionRecord
 from thesis_format_fixer.contracts.review_types import IntelligentReviewReport, ReviewFinding
 from thesis_format_fixer.detectors.block_locator import locate_blocks
 from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
+from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_surface_docx
 from thesis_format_fixer.io.document_loader import load_document
-from thesis_format_fixer.reporters.report_builder import build_report
+from thesis_format_fixer.reporters.report_builder import build_report, summarize_a_class_hit_surface
 from thesis_format_fixer.review.model_adapter import LocalModelAdapter
 from thesis_format_fixer.review.reviewer import REVIEW_TARGETS, ReviewConfig, Reviewer
 from thesis_format_fixer.rules.registry import RuleRegistry
@@ -152,6 +153,15 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     else:
         lines.append("- (none)")
 
+    lines.extend(["", "## A 类命中面", ""])
+    a_surface = sections.get("a_class_hit_surface", {})
+    for label, key in (
+        ("已命中", "hit"),
+        ("未命中", "unhit"),
+        ("降级", "degraded"),
+    ):
+        lines.append(f"- {label}: {len(a_surface.get(key, []))}")
+
     lines.extend(["", "## 需人工复核", ""])
     manual_items = sections["manual_review_required"]
     if manual_items:
@@ -207,6 +217,13 @@ def _build_single_payload(
     records = _build_skeleton_records(registry)
 
     if working_file.suffix.lower() == ".docx" and working_file.exists():
+        task008 = execute_task008_a_surface_docx(
+            working_file,
+            block_map=block_map,
+            apply_fixes=output_docx is not None,
+            confidence_threshold=BLOCK_CONFIDENCE_REVIEW_THRESHOLD,
+        )
+        _merge_rule_updates(records, task008.updates)
         task006 = execute_task006_docx(working_file, apply_fixes=output_docx is not None)
         _merge_rule_updates(records, task006.updates)
 
@@ -220,6 +237,7 @@ def _build_single_payload(
         review_report = Reviewer(review_config, adapter=model_adapter).run(context, block_map)
 
     report = build_report(records, intelligent_review=review_report)
+    a_surface = summarize_a_class_hit_surface(records)
 
     auto_fixed = [
         _record_to_payload(item, registry=registry) for item in report.auto_fixed if item.status == "fixed"
@@ -267,6 +285,11 @@ def _build_single_payload(
         "auto_fixed_bibliography": auto_fixed_bibliography,
         "detected_not_auto_modified": detected_not_auto_modified,
         "detected_special_issues_not_modified": detected_special_issues_not_modified,
+        "a_class_hit_surface": {
+            "hit": [_record_to_payload(item, registry=registry) for item in a_surface.hit],
+            "unhit": [_record_to_payload(item, registry=registry) for item in a_surface.unhit],
+            "degraded": [_record_to_payload(item, registry=registry) for item in a_surface.degraded],
+        },
         "manual_review_required": manual_review_required,
     }
 
@@ -285,6 +308,9 @@ def _build_single_payload(
             "detected_not_auto_modified_count": len(detected_not_auto_modified),
             "detected_special_issues_not_modified_count": len(detected_special_issues_not_modified),
             "manual_review_required_count": len(manual_review_required),
+            "a_class_hit_count": len(a_surface.hit),
+            "a_class_unhit_count": len(a_surface.unhit),
+            "a_class_degraded_count": len(a_surface.degraded),
             "block_low_confidence_count": sum(
                 1
                 for block in block_map.blocks.values()
@@ -380,10 +406,13 @@ def _merge_rule_updates(records: list[RuleExecutionRecord], updates: dict[str, A
         if idx is None:
             continue
         current = records[idx]
+        next_status = update.status
+        if current.status == "fixed" and update.status != "fixed":
+            next_status = current.status
         records[idx] = RuleExecutionRecord(
             rule_id=current.rule_id,
             decision=current.decision,
-            status=update.status,
+            status=next_status,
             checked_only=current.checked_only,
             excluded_by_scope=current.excluded_by_scope,
             evidence=update.evidence,

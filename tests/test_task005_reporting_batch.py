@@ -37,6 +37,7 @@ def test_run_fix_writes_docx_and_reports(tmp_path: Path) -> None:
         "auto_fixed_bibliography",
         "detected_not_auto_modified",
         "detected_special_issues_not_modified",
+        "a_class_hit_surface",
         "manual_review_required",
     }
 

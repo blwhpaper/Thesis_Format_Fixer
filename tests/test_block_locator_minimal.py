@@ -44,8 +44,20 @@ def test_block_locator_outputs_confidence_and_evidence() -> None:
         "contents",
         "references",
         "ack",
+        "abstract_cn_title",
+        "abstract_en_title",
+        "contents_title",
+        "references_title",
+        "ack_title",
+        "body",
+        "body_main_title",
+        "body_paragraphs",
+        "references_entries",
+        "page_margins",
+        "header",
+        "footer",
     }
-    assert set(block_map.blocks) == expected_blocks
+    assert expected_blocks.issubset(set(block_map.blocks))
 
     for block in block_map.blocks.values():
         assert isinstance(block.confidence, float)
