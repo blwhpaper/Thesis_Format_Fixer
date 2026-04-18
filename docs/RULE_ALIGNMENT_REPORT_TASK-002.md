@@ -3,7 +3,7 @@
 ## 1. 对齐说明
 
 - 目标：核对 `FORMAT_RULEBOOK_v1` 与原始依据的一致性，输出冻结修订结论。
-- 判定口径：`一致 / 部分一致 / 不一致 / 证据不足`。
+- 判定口径：`一致 / 部分一致 / 不一致 / 受解析限制`。
 - 优先级：**原始依据 > 冻结版规则 > 后续实现**。
 
 ## 2. 本次实际核验文件
@@ -11,23 +11,20 @@
 - 已读取：
   - `/Users/apple/Projects/Thesis_Format_Fixer/README.md`
   - `/Users/apple/Projects/Thesis_Format_Fixer/rules/FORMAT_RULEBOOK_v1.md`（仓库骨架版）
-  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/8. 毕业论文正文写作格式要求.docx`（0 字节）
-  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/10.1论文封皮.pdf`（0 字节）
-  - `/Users/apple/Downloads/FORMAT_RULEBOOK_v1.md`（完整 v1）
-  - `/Users/apple/Downloads/8. 毕业论文正文写作格式要求.docx`（可提取文本）
-  - `/Users/apple/Downloads/10.1论文封皮.pdf`（存在可确认，文本证据不足）
-- 未能按任务路径读取：
-  - `/mnt/data/FORMAT_RULEBOOK_v1.md`（路径不存在）
-  - `/mnt/data/8. 毕业论文正文写作格式要求.docx`（路径不存在）
-  - `/mnt/data/10.1论文封皮.pdf`（路径不存在）
+  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/FORMAT_RULEBOOK_v1.md`（完整 v1）
+  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/8. 毕业论文正文写作格式要求.docx`（可提取文本）
+  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/10.1论文封皮.pdf`（文件可读，文本提取不稳定）
+- 复核口径：
+  - 原始依据文件已纳入仓库 `rules/sources/`，本轮以仓库内源文件为准。
+  - 早期 `/mnt/data` 路径缺失属于历史执行环境差异，不再作为当前证据缺口。
 
 ## 3. 逐项对齐
 
 | 规则项 | 原始依据 | v1 当前写法 | 是否一致 | 修订结论 |
 |---|---|---|---|---|
 | 规则优先级 | 原始依据为最高解释来源 | v1 有“原始规范优先” | 一致 | v2 明确固化为“原始依据 > 冻结版规则 > 后续实现” |
-| 中文封皮 | docx 说明中文封皮必须使用专用封皮；pdf 为样例 | v1 给出封皮样式与字段，含“中文封皮无 logo” | 部分一致 | 保留“存在性检查”，模板重建降为 C；细节待 pdf 证据回填 |
-| 英文封皮 | docx 明确英文封皮自行制作并 A4 打印；pdf 细节未完整提取 | v1 给出字体和 logo 规则 | 部分一致 | 保留 B（字段与存在性检查），模板与布局重建降 C |
+| 中文封皮 | docx 说明中文封皮必须使用专用封皮；pdf 为样例 | v1 给出封皮样式与字段，含“中文封皮无 logo” | 部分一致 | 保留“存在性检查”；模板重建降为 C，原因是自动化风险高且细粒度版式受 PDF 文本提取限制 |
+| 英文封皮 | docx 明确英文封皮自行制作并 A4 打印；pdf 文本提取不稳定 | v1 给出字体和 logo 规则 | 部分一致 | 保留 B（字段与存在性检查），模板与布局重建降 C；可基于样例页面做字段级人工核对 |
 | 中文摘要 | docx 明确“摘 要”、黑体小二、段前后、25 磅 | v1 一致 | 一致 | 保留 A |
 | 中文关键词 | docx 明确宋体小四加粗、分号；且不少于 5 个关键词 | v1 有样式与分号，但未冻结“≥5” | 部分一致 | v2 补充“关键词不少于 5（检查项）” |
 | 英文摘要 | docx 明确 Abstract 样式 | v1 一致 | 一致 | 保留 A |
@@ -52,9 +49,9 @@
 
 ## 4. 关键冲突与模糊点
 
-- 仓库内 `rules/FORMAT_RULEBOOK_v1.md` 为骨架版，和完整 v1 不一致，无法直接作为实现基线。
-- `/mnt/data` 缺失，导致无法在任务指定路径完成原件读取；已采用同名替代源并标记风险。
-- 封皮 PDF 文本无法稳定提取，封皮细粒度样式证据不足，已统一降级处理。
+- 仓库内 `rules/FORMAT_RULEBOOK_v1.md` 为骨架版，和 `rules/sources/FORMAT_RULEBOOK_v1.md`（完整 v1）不一致；实现基线以 `rules/sources/` 为准。
+- 原始依据文件缺失问题已解决：`rules/sources/` 下 docx/pdf/v1 已可读取。
+- 封皮 PDF 仍存在文本提取能力限制：可做字段级人工核对，但不宜据此进行细粒度布局自动重建。
 - 参考文献规则中“英文在前”与“按发表顺序”存在执行冲突（全局排序还是分组内排序），需保持检查不自动改写。
 - “近三年”属于“原则上”表述，非绝对硬约束，不宜自动修复。
 - 标题层级识别依赖语义和上下文，不宜直接归入 A。
