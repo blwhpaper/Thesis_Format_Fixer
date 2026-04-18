@@ -23,3 +23,7 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# Runtime outputs
+runs/
+.DS_Store
