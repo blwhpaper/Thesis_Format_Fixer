@@ -9,7 +9,7 @@ from xml.etree import ElementTree as ET
 from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from thesis_format_fixer.contracts.report_types import Evidence
-from thesis_format_fixer.detectors.block_locator import BlockMap
+from thesis_format_fixer.detectors.block_locator import BlockMap, ReferenceScanResult, scan_reference_entries
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -97,7 +97,6 @@ def execute_task008_a_surface_docx(
         "FR-4.8-05": (("body_headings_h1", "body_headings_h2", "body_headings_h3"), _style(font=FONT_TNR, size=SMALL_FOUR_HALF_PT, bold=True, center=False, line=LINE_25PT_TWIPS)),
         "FR-4.9-01": (("body_paragraphs",), _style(font=FONT_TNR, size=SMALL_FOUR_HALF_PT, bold=False, center=False, line=LINE_25PT_TWIPS)),
         "FR-4.11-01": (("references_title",), _style(font=FONT_TNR, size=SMALL_TWO_HALF_PT, bold=True, center=True, line=LINE_25PT_TWIPS, before=TITLE_BEFORE_TWIPS, after=TITLE_AFTER_TWIPS)),
-        "FR-4.11-02": (("references_entries",), _style(font=FONT_TNR, size=SMALL_FOUR_HALF_PT, bold=False, center=False, line=LINE_25PT_TWIPS)),
         "FR-4.12-01": (("ack_title",), _style(font=FONT_HEITI, size=SMALL_TWO_HALF_PT, bold=True, center=True, line=LINE_25PT_TWIPS, before=TITLE_BEFORE_TWIPS, after=TITLE_AFTER_TWIPS)),
         "FR-4.12-02": (("ack_body",), _style(font=FONT_SONG, size=SMALL_FOUR_HALF_PT, bold=False, center=False, line=LINE_25PT_TWIPS)),
     }
@@ -124,6 +123,61 @@ def execute_task008_a_surface_docx(
             details={"target_blocks": list(block_ids), "target_count": len(target_refs)},
         )
         modified |= changed
+
+    references_style = _style(
+        font=FONT_TNR,
+        size=SMALL_FOUR_HALF_PT,
+        bold=False,
+        center=False,
+        line=LINE_25PT_TWIPS,
+    )
+    references_refs, references_evidence, references_status, references_degraded, references_scan = _resolve_reference_entry_targets(
+        block_map=block_map,
+        by_context_index=by_context_index,
+        confidence_threshold=confidence_threshold,
+    )
+    references_changed = False
+    changed_entry_group_count = 0
+    if apply_fixes and references_status == "applicable":
+        index_set = {item.context_index for item in references_refs}
+        for group in references_scan.entry_groups:
+            group_changed = False
+            for idx in group:
+                ref = by_context_index.get(idx)
+                if ref is None or idx not in index_set:
+                    continue
+                group_changed |= _apply_paragraph_style(ref.element, references_style)
+            references_changed |= group_changed
+            if group_changed:
+                changed_entry_group_count += 1
+
+    updates["FR-4.11-02"] = _to_rule_update(
+        "FR-4.11-02",
+        status=references_status,
+        degraded=references_degraded,
+        changed=references_changed,
+        apply_fixes=apply_fixes,
+        evidence=references_evidence,
+        details={
+            "target_blocks": ["references_heading", "references_entries"],
+            "target_count": len(references_refs),
+            "entry_group_count": len(references_scan.entry_groups),
+            "numbered_entry_group_count": sum(
+                1 for source in references_scan.entry_group_sources if source == "numbered_entry"
+            ),
+            "author_leading_entry_group_count": sum(
+                1 for source in references_scan.entry_group_sources if source == "author_leading_fallback"
+            ),
+            "entry_paragraph_count": len(references_refs),
+            "fixed_entry_group_count": changed_entry_group_count if apply_fixes else 0,
+            "skipped_paragraph_count": len(references_scan.skipped_indices),
+            "skipped_paragraph_indices": list(references_scan.skipped_indices),
+            "suspicious_paragraph_count": len(references_scan.suspicious_unrecognized_indices),
+            "suspicious_paragraph_indices": list(references_scan.suspicious_unrecognized_indices),
+            "scan_stop_reason": references_scan.stop_reason,
+        },
+    )
+    modified |= references_changed
 
     # Section margin rule.
     margin_block = block_map.blocks.get("page_margins")
@@ -262,6 +316,69 @@ def _resolve_targets(
     if not refs:
         return [], tuple(evidence), "not_applicable", degraded
     return list(refs.values()), tuple(evidence), "applicable", degraded
+
+
+def _resolve_reference_entry_targets(
+    *,
+    block_map: BlockMap,
+    by_context_index: dict[int, _ParagraphRef],
+    confidence_threshold: float,
+) -> tuple[list[_ParagraphRef], tuple[Evidence, ...], str, bool, ReferenceScanResult]:
+    references_heading = block_map.blocks.get("references_heading") or block_map.blocks.get("references_title")
+    if references_heading is None or references_heading.start_paragraph is None:
+        return (
+            [],
+            (),
+            "not_applicable",
+            False,
+            ReferenceScanResult(
+                entry_groups=(),
+                entry_group_sources=(),
+                skipped_indices=(),
+                suspicious_unrecognized_indices=(),
+                stop_reason="references_heading_not_found",
+            ),
+        )
+
+    heading_index = references_heading.start_paragraph
+    hard_stop = None
+    ack_block = block_map.blocks.get("ack_title")
+    if ack_block is not None and ack_block.start_paragraph is not None and ack_block.start_paragraph > heading_index:
+        hard_stop = ack_block.start_paragraph
+
+    paragraphs = tuple(by_context_index[idx].text for idx in sorted(by_context_index))
+    scan = scan_reference_entries(paragraphs, heading_index=heading_index, hard_stop_index=hard_stop)
+    refs: list[_ParagraphRef] = []
+    for group in scan.entry_groups:
+        for idx in group:
+            ref = by_context_index.get(idx)
+            if ref is not None:
+                refs.append(ref)
+
+    degraded = references_heading.confidence < confidence_threshold
+    evidence: list[Evidence] = list(references_heading.evidence)
+    numbered_count = sum(1 for source in scan.entry_group_sources if source == "numbered_entry")
+    fallback_count = sum(1 for source in scan.entry_group_sources if source == "author_leading_fallback")
+    evidence.append(
+        Evidence(
+            paragraph_index=heading_index,
+            snippet=(
+                f"entry_groups={len(scan.entry_groups)}, "
+                + f"numbered={numbered_count}, "
+                + f"author_fallback={fallback_count}, "
+                + f"entry_paragraphs={len(refs)}, "
+                + f"skipped={len(scan.skipped_indices)}, "
+                + f"suspicious={len(scan.suspicious_unrecognized_indices)}, "
+                + f"stop={scan.stop_reason}"
+            ),
+            reason="reference_entry_group_scan",
+        )
+    )
+    if degraded:
+        return [], tuple(evidence), "degraded", True, scan
+    if not refs:
+        return [], tuple(evidence), "not_applicable", False, scan
+    return refs, tuple(evidence), "applicable", False, scan
 
 
 def _to_rule_update(

@@ -5,7 +5,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from zipfile import ZIP_DEFLATED, ZipFile
 
-from thesis_format_fixer.app.runner import run_fix
+from thesis_format_fixer.app.runner import run_check, run_fix
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
@@ -163,6 +163,10 @@ def test_task006_fixes_footnotes_and_bibliography_styles(tmp_path: Path) -> None
     report = json.loads(output_docx.with_suffix(".report.json").read_text(encoding="utf-8"))
     assert any(item["rule_id"] == "FR-4.10-02" for item in report["sections"]["auto_fixed_footnotes"])
     assert any(item["rule_id"] == "FR-4.11-02" for item in report["sections"]["auto_fixed_bibliography"])
+    references_diag = report["sections"]["references_diagnostics"]
+    assert references_diag["references_heading_detected"] is True
+    assert references_diag["reference_entries_detected"] == 5
+    assert references_diag["reference_entries_fixed"] >= 1
 
 
 def test_task006_reports_special_issues_without_content_rewrite(tmp_path: Path) -> None:
@@ -200,3 +204,34 @@ def test_task006_reports_special_issues_without_content_rewrite(tmp_path: Path) 
     assert "FR-4.10-02" in detected_ids
     assert "FR-4.10-03" in detected_ids
     assert "FR-4.10-04" in detected_ids
+
+
+def test_reference_diagnostics_include_author_leading_fallback_counts(tmp_path: Path) -> None:
+    input_docx = tmp_path / "author-leading.docx"
+    report_json = tmp_path / "author-leading.report.json"
+
+    _write_docx(
+        input_docx,
+        body_paragraphs=[
+            "REFERENCES",
+            "Smith, J. A practical test study. Journal of Testing, 2026.",
+            "王强，李明. 测试方法综述. 测试学报, 2025.",
+            "Brown, A., Lee, C., and Zhang, H. Multi-author report.",
+            "Technical Validation Report, 2024.",
+            "致谢",
+        ],
+    )
+
+    assert run_check(input_docx, report_json_out=report_json) == 0
+
+    payload = json.loads(report_json.read_text(encoding="utf-8"))
+    diag = payload["sections"]["references_diagnostics"]
+    summary = payload["summary"]
+
+    assert diag["references_heading_detected"] is True
+    assert diag["reference_entry_total"] == 3
+    assert diag["numbered_reference_entry_count"] == 0
+    assert diag["author_leading_reference_entry_count"] == 3
+    assert diag["suspicious_reference_candidate_count"] == 0
+    assert summary["reference_entry_total"] == 3
+    assert summary["author_leading_reference_entry_count"] == 3

@@ -38,6 +38,7 @@ def test_run_fix_writes_docx_and_reports(tmp_path: Path) -> None:
         "detected_not_auto_modified",
         "detected_special_issues_not_modified",
         "a_class_hit_surface",
+        "references_diagnostics",
         "manual_review_required",
     }
 

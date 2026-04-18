@@ -21,6 +21,31 @@ SMALL_FIVE_HALF_PT = "18"  # 9pt
 SMALL_FOUR_HALF_PT = "24"  # 12pt
 SINGLE_SPACING_TWIPS = "240"
 LINE_25PT_TWIPS = "500"
+REFERENCE_ENTRY_STRONG_RE = re.compile(r"^\s*\[(\d+)\]\s*\S+")
+AUTHOR_ENTRY_EN_RE = re.compile(
+    r"^[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*"
+    r"(?:\s*,\s*[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*)*"
+    r"(?:\s+(?:and|&)\s+[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*)?"
+    r"(?:\s+et\s+al\.?)?"
+    r"\s*[，,.;。:：]"
+)
+AUTHOR_ENTRY_ZH_RE = re.compile(
+    r"^[\u4e00-\u9fff]{1,4}"
+    r"(?:\s*[、，,]\s*[\u4e00-\u9fff]{1,4}){0,8}"
+    r"(?:\s*[，,]\s*[A-Z][A-Za-z'`\-]*(?:\s+[A-Z](?:\.)?)*)*"
+    r"\s*[，,.;。:：]"
+)
+AUTHOR_LEADING_EN_EXCLUDE_PREFIXES: set[str] = {
+    "master",
+    "thesis",
+    "dissertation",
+    "journal",
+    "technical",
+    "report",
+    "proceedings",
+    "vol",
+    "volume",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,6 +58,15 @@ class RuleUpdate:
 @dataclass(frozen=True, slots=True)
 class Task006Execution:
     updates: dict[str, RuleUpdate]
+
+
+@dataclass(frozen=True, slots=True)
+class _ReferenceEntry:
+    start_index: int
+    paragraphs: tuple[ET.Element, ...]
+    text: str
+    index_value: int | None
+    source: str
 
 
 def execute_task006_docx(path: Path, *, apply_fixes: bool) -> Task006Execution:
@@ -204,7 +238,7 @@ def _fix_and_check_references(
         }
         return updates, changed
 
-    entries = _collect_reference_entries(body_paragraphs, heading_index)
+    entries, skipped_indices = _collect_reference_entries(body_paragraphs, heading_index)
     evidence = (
         Evidence(paragraph_index=heading_index, snippet="REFERENCES", reason="references_heading_found"),
     )
@@ -219,14 +253,20 @@ def _fix_and_check_references(
         }
         return updates, changed
 
-    for _, paragraph, _ in entries:
-        if apply_fixes and _set_paragraph_spacing(paragraph, line=LINE_25PT_TWIPS, line_rule="exact"):
+    changed_entries = 0
+    for entry in entries:
+        entry_changed = False
+        for paragraph in entry.paragraphs:
+            if apply_fixes and _set_paragraph_spacing(paragraph, line=LINE_25PT_TWIPS, line_rule="exact"):
+                entry_changed = True
+            for run in paragraph.findall("w:r", NS):
+                if apply_fixes and _set_run_font_and_size(run, font_name=FONT_TNR, half_points=SMALL_FOUR_HALF_PT):
+                    entry_changed = True
+        if entry_changed:
             changed = True
-        for run in paragraph.findall("w:r", NS):
-            if apply_fixes and _set_run_font_and_size(run, font_name=FONT_TNR, half_points=SMALL_FOUR_HALF_PT):
-                changed = True
+            changed_entries += 1
 
-    entry_texts = [text for _, _, text in entries]
+    entry_texts = [entry.text for entry in entries]
     language_sequence = [_lang_bucket(text) for text in entry_texts]
     english_count = sum(1 for bucket in language_sequence if bucket == "en")
     years = [_extract_year(text) for text in entry_texts]
@@ -238,12 +278,23 @@ def _fix_and_check_references(
     language_order_ok = _english_first_then_chinese(language_sequence)
     recency_ok = bool(valid_years) and recent_count * 2 >= len(valid_years)
     rough_format_ok, invalid_examples = _rough_reference_format_check(entry_texts)
+    numbered_entry_count = sum(1 for entry in entries if entry.source == "numbered_entry")
+    author_leading_entry_count = sum(1 for entry in entries if entry.source == "author_leading_fallback")
 
     updates = {
         "FR-4.11-02": RuleUpdate(
             status="fixed" if (apply_fixes and changed) else "checked_ok",
             evidence=evidence,
-            details={"entry_count": len(entries)},
+            details={
+                "entry_count": len(entries),
+                "reference_entry_total": len(entries),
+                "numbered_reference_entry_count": numbered_entry_count,
+                "author_leading_reference_entry_count": author_leading_entry_count,
+                "entry_paragraph_count": sum(len(entry.paragraphs) for entry in entries),
+                "fixed_entry_count": changed_entries if apply_fixes else 0,
+                "skipped_paragraph_count": len(skipped_indices),
+                "skipped_paragraph_indices": skipped_indices,
+            },
         ),
         "FR-4.11-03": RuleUpdate(
             status="checked_ok" if rough_format_ok and sequence_ok else "detected_not_modified",
@@ -293,35 +344,138 @@ def _find_references_heading_index(paragraphs: list[ET.Element]) -> int | None:
 def _collect_reference_entries(
     paragraphs: list[ET.Element],
     heading_index: int,
-) -> list[tuple[int, ET.Element, str]]:
-    entries: list[tuple[int, ET.Element, str]] = []
-    started = False
+) -> tuple[list[_ReferenceEntry], list[int]]:
+    entries: list[_ReferenceEntry] = []
+    skipped: list[int] = []
+    current_index = 0
+    current_source = "numbered_entry"
+    current_paragraphs: list[ET.Element] = []
+    current_texts: list[str] = []
+    pre_entry_noise = 0
+    blank_noise = 0
+
+    def flush() -> None:
+        nonlocal current_index, current_source, current_paragraphs, current_texts
+        if not current_paragraphs:
+            return
+        entries.append(
+            _ReferenceEntry(
+                start_index=current_index,
+                paragraphs=tuple(current_paragraphs),
+                text=" ".join(current_texts).strip(),
+                index_value=current_index if current_source == "numbered_entry" else None,
+                source=current_source,
+            )
+        )
+        current_paragraphs = []
+        current_texts = []
+        current_source = "numbered_entry"
+
     for idx in range(heading_index + 1, len(paragraphs)):
         text = _paragraph_text(paragraphs[idx]).strip()
         if not text:
-            if started:
+            if current_paragraphs:
+                blank_noise += 1
+                if blank_noise > 1:
+                    break
+            continue
+
+        blank_noise = 0
+        if _is_reference_stop_heading(text):
+            break
+
+        matched = REFERENCE_ENTRY_STRONG_RE.match(text)
+        if matched:
+            flush()
+            current_index = int(matched.group(1))
+            current_source = "numbered_entry"
+            current_paragraphs = [paragraphs[idx]]
+            current_texts = [text]
+            continue
+
+        if _looks_like_author_leading_entry_start(text):
+            flush()
+            current_index = len(entries) + 1
+            current_source = "author_leading_fallback"
+            current_paragraphs = [paragraphs[idx]]
+            current_texts = [text]
+            continue
+
+        if not entries and not current_paragraphs:
+            skipped.append(idx)
+            pre_entry_noise += 1
+            if _looks_like_new_section_heading(text) or pre_entry_noise > 2:
                 break
             continue
-        if re.match(r"^\[\d+\]", text):
-            started = True
-            entries.append((idx, paragraphs[idx], text))
-            continue
-        if started:
+
+        if _looks_like_new_section_heading(text):
             break
-    return entries
+
+        current_paragraphs.append(paragraphs[idx])
+        current_texts.append(text)
+
+    flush()
+    return entries, skipped
 
 
-def _index_sequence_ok(entries: list[tuple[int, ET.Element, str]]) -> bool:
+def _index_sequence_ok(entries: list[_ReferenceEntry]) -> bool:
     expected = 1
-    for _, _, text in entries:
-        match = re.match(r"^\[(\d+)\]", text)
-        if not match:
+    for entry in entries:
+        if entry.source != "numbered_entry":
             return False
-        value = int(match.group(1))
-        if value != expected:
+        if entry.index_value != expected:
             return False
         expected += 1
     return True
+
+
+def _is_reference_stop_heading(text: str) -> bool:
+    lowered = text.strip().casefold()
+    return lowered in {
+        "致谢",
+        "acknowledgements",
+        "acknowledgments",
+        "appendix",
+        "附录",
+        "contents",
+        "目录",
+        "abstract",
+        "摘 要",
+        "摘要",
+        "references",
+        "参考文献",
+    }
+
+
+def _looks_like_new_section_heading(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if _is_reference_stop_heading(stripped):
+        return True
+    if re.match(r"^\d+(?:\.\d+){0,2}\s+\S+", stripped):
+        return True
+    if re.match(r"^[A-Z][A-Z\s]{2,30}$", stripped):
+        return len([item for item in stripped.split() if item]) <= 4
+    return False
+
+
+def _looks_like_author_leading_entry_start(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if REFERENCE_ENTRY_STRONG_RE.match(stripped):
+        return False
+    if _looks_like_new_section_heading(stripped):
+        return False
+    first_word_match = re.match(r"^([A-Za-z]+)", stripped)
+    if first_word_match is not None and first_word_match.group(1).casefold() in AUTHOR_LEADING_EN_EXCLUDE_PREFIXES:
+        return False
+    if AUTHOR_ENTRY_EN_RE.match(stripped):
+        return True
+    if AUTHOR_ENTRY_ZH_RE.match(stripped):
+        return True
+    return False
 
 
 def _english_first_then_chinese(language_sequence: list[str]) -> bool:

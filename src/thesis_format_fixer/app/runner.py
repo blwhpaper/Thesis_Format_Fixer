@@ -11,7 +11,7 @@ from typing import Any
 
 from thesis_format_fixer.contracts.report_types import RuleExecutionRecord
 from thesis_format_fixer.contracts.review_types import IntelligentReviewReport, ReviewFinding
-from thesis_format_fixer.detectors.block_locator import locate_blocks
+from thesis_format_fixer.detectors.block_locator import locate_blocks, scan_reference_entries
 from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_surface_docx
 from thesis_format_fixer.io.document_loader import load_document
@@ -162,6 +162,24 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     ):
         lines.append(f"- {label}: {len(a_surface.get(key, []))}")
 
+    lines.extend(["", "## 参考文献识别诊断", ""])
+    references_diag = sections.get("references_diagnostics", {})
+    lines.append(f"- references_heading_detected: {references_diag.get('references_heading_detected', False)}")
+    lines.append(f"- references_heading_index: {references_diag.get('references_heading_index')}")
+    lines.append(f"- reference_entries_detected: {references_diag.get('reference_entries_detected', 0)}")
+    lines.append(f"- reference_entry_total: {references_diag.get('reference_entry_total', 0)}")
+    lines.append(
+        f"- numbered_reference_entry_count: {references_diag.get('numbered_reference_entry_count', 0)}"
+    )
+    lines.append(
+        f"- author_leading_reference_entry_count: {references_diag.get('author_leading_reference_entry_count', 0)}"
+    )
+    lines.append(
+        f"- suspicious_reference_candidate_count: {references_diag.get('suspicious_reference_candidate_count', 0)}"
+    )
+    lines.append(f"- reference_entries_fixed: {references_diag.get('reference_entries_fixed', 0)}")
+    lines.append(f"- skipped_or_suspicious_count: {len(references_diag.get('skipped_or_suspicious', []))}")
+
     lines.extend(["", "## 需人工复核", ""])
     manual_items = sections["manual_review_required"]
     if manual_items:
@@ -238,6 +256,11 @@ def _build_single_payload(
 
     report = build_report(records, intelligent_review=review_report)
     a_surface = summarize_a_class_hit_surface(records)
+    references_diagnostics = _build_references_diagnostics(
+        context=context,
+        block_map=block_map,
+        records=records,
+    )
 
     auto_fixed = [
         _record_to_payload(item, registry=registry) for item in report.auto_fixed if item.status == "fixed"
@@ -290,6 +313,7 @@ def _build_single_payload(
             "unhit": [_record_to_payload(item, registry=registry) for item in a_surface.unhit],
             "degraded": [_record_to_payload(item, registry=registry) for item in a_surface.degraded],
         },
+        "references_diagnostics": references_diagnostics,
         "manual_review_required": manual_review_required,
     }
 
@@ -311,6 +335,18 @@ def _build_single_payload(
             "a_class_hit_count": len(a_surface.hit),
             "a_class_unhit_count": len(a_surface.unhit),
             "a_class_degraded_count": len(a_surface.degraded),
+            "references_heading_detected": 1 if references_diagnostics["references_heading_detected"] else 0,
+            "reference_entry_detected_count": references_diagnostics["reference_entries_detected"],
+            "reference_entry_total": references_diagnostics["reference_entry_total"],
+            "numbered_reference_entry_count": references_diagnostics["numbered_reference_entry_count"],
+            "author_leading_reference_entry_count": references_diagnostics[
+                "author_leading_reference_entry_count"
+            ],
+            "reference_entry_fixed_count": references_diagnostics["reference_entries_fixed"],
+            "suspicious_reference_candidate_count": references_diagnostics[
+                "suspicious_reference_candidate_count"
+            ],
+            "reference_suspicious_count": len(references_diagnostics["skipped_or_suspicious"]),
             "block_low_confidence_count": sum(
                 1
                 for block in block_map.blocks.values()
@@ -332,6 +368,90 @@ def _build_single_payload(
             }
             for key, value in block_map.blocks.items()
         },
+    }
+
+
+def _build_references_diagnostics(
+    *,
+    context: Any,
+    block_map: Any,
+    records: list[RuleExecutionRecord],
+) -> dict[str, Any]:
+    heading_block = block_map.blocks.get("references_heading") or block_map.blocks.get("references_title")
+    heading_index = None if heading_block is None else heading_block.start_paragraph
+    heading_detected = heading_index is not None
+
+    entries_detected = 0
+    numbered_entry_count = 0
+    author_leading_entry_count = 0
+    scan_stop_reason = "references_heading_not_found"
+    skipped_or_suspicious: list[dict[str, Any]] = []
+    if heading_detected:
+        hard_stop = None
+        ack_block = block_map.blocks.get("ack_title")
+        if ack_block is not None and ack_block.start_paragraph is not None and ack_block.start_paragraph > heading_index:
+            hard_stop = ack_block.start_paragraph
+        scan = scan_reference_entries(context.paragraphs, heading_index=heading_index, hard_stop_index=hard_stop)
+        entries_detected = len(scan.entry_groups)
+        numbered_entry_count = sum(1 for source in scan.entry_group_sources if source == "numbered_entry")
+        author_leading_entry_count = sum(
+            1 for source in scan.entry_group_sources if source == "author_leading_fallback"
+        )
+        scan_stop_reason = scan.stop_reason
+        for idx in scan.skipped_indices:
+            skipped_or_suspicious.append(
+                {
+                    "paragraph_index": idx,
+                    "snippet": context.paragraphs[idx] if 0 <= idx < len(context.paragraphs) else "",
+                    "reason": "suspicious_unrecognized",
+                }
+            )
+        for idx in scan.suspicious_unrecognized_indices:
+            if idx in scan.skipped_indices:
+                continue
+            skipped_or_suspicious.append(
+                {
+                    "paragraph_index": idx,
+                    "snippet": context.paragraphs[idx] if 0 <= idx < len(context.paragraphs) else "",
+                    "reason": "suspicious_unrecognized",
+                }
+            )
+        if entries_detected == 0:
+            skipped_or_suspicious.append(
+                {
+                    "paragraph_index": heading_index,
+                    "snippet": context.paragraphs[heading_index] if 0 <= heading_index < len(context.paragraphs) else "",
+                    "reason": "reference_entry_start_not_found",
+                }
+            )
+
+    ref_fix_record = next((item for item in records if item.rule_id == "FR-4.11-02"), None)
+    entries_fixed = 0
+    if ref_fix_record is not None:
+        details = ref_fix_record.details
+        entries_fixed = int(details.get("fixed_entry_group_count", 0))
+        if not skipped_or_suspicious:
+            for idx in details.get("skipped_paragraph_indices", [])[:5]:
+                index = int(idx)
+                skipped_or_suspicious.append(
+                    {
+                        "paragraph_index": index,
+                        "snippet": context.paragraphs[index] if 0 <= index < len(context.paragraphs) else "",
+                        "reason": "formatter_skipped_paragraph",
+                    }
+                )
+
+    return {
+        "references_heading_detected": heading_detected,
+        "references_heading_index": heading_index,
+        "reference_entries_detected": entries_detected,
+        "reference_entry_total": entries_detected,
+        "numbered_reference_entry_count": numbered_entry_count,
+        "author_leading_reference_entry_count": author_leading_entry_count,
+        "reference_entries_fixed": entries_fixed,
+        "scan_stop_reason": scan_stop_reason,
+        "suspicious_reference_candidate_count": len(skipped_or_suspicious),
+        "skipped_or_suspicious": skipped_or_suspicious,
     }
 
 
