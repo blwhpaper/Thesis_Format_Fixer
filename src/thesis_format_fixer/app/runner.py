@@ -12,6 +12,7 @@ from typing import Any
 from thesis_format_fixer.contracts.report_types import RuleExecutionRecord
 from thesis_format_fixer.contracts.review_types import IntelligentReviewReport, ReviewFinding
 from thesis_format_fixer.detectors.block_locator import locate_blocks, scan_reference_entries
+from thesis_format_fixer.detectors.reference_parser import parse_reference_entry
 from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_surface_docx
 from thesis_format_fixer.io.document_loader import load_document
@@ -179,6 +180,15 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     )
     lines.append(f"- reference_entries_fixed: {references_diag.get('reference_entries_fixed', 0)}")
     lines.append(f"- skipped_or_suspicious_count: {len(references_diag.get('skipped_or_suspicious', []))}")
+    lines.append(f"- reference_parsed_count: {references_diag.get('reference_parsed_count', 0)}")
+    lines.append(
+        "- "
+        + f"reference_parse_high_confidence_count: {references_diag.get('reference_parse_high_confidence_count', 0)}"
+    )
+    lines.append(
+        "- "
+        + f"reference_parse_low_confidence_count: {references_diag.get('reference_parse_low_confidence_count', 0)}"
+    )
 
     lines.extend(["", "## 需人工复核", ""])
     manual_items = sections["manual_review_required"]
@@ -343,6 +353,13 @@ def _build_single_payload(
                 "author_leading_reference_entry_count"
             ],
             "reference_entry_fixed_count": references_diagnostics["reference_entries_fixed"],
+            "reference_parsed_count": references_diagnostics["reference_parsed_count"],
+            "reference_parse_high_confidence_count": references_diagnostics[
+                "reference_parse_high_confidence_count"
+            ],
+            "reference_parse_low_confidence_count": references_diagnostics[
+                "reference_parse_low_confidence_count"
+            ],
             "suspicious_reference_candidate_count": references_diagnostics[
                 "suspicious_reference_candidate_count"
             ],
@@ -384,6 +401,12 @@ def _build_references_diagnostics(
     entries_detected = 0
     numbered_entry_count = 0
     author_leading_entry_count = 0
+    parsed_count = 0
+    parsed_high_confidence_count = 0
+    parsed_low_confidence_count = 0
+    reference_type_counts: dict[str, int] = {}
+    unresolved_reference_entries: list[dict[str, Any]] = []
+    entry_texts: list[str] = []
     scan_stop_reason = "references_heading_not_found"
     skipped_or_suspicious: list[dict[str, Any]] = []
     if heading_detected:
@@ -397,6 +420,11 @@ def _build_references_diagnostics(
         author_leading_entry_count = sum(
             1 for source in scan.entry_group_sources if source == "author_leading_fallback"
         )
+        for group in scan.entry_groups:
+            lines = [context.paragraphs[idx].strip() for idx in group if 0 <= idx < len(context.paragraphs)]
+            text = " ".join(item for item in lines if item).strip()
+            if text:
+                entry_texts.append(text)
         scan_stop_reason = scan.stop_reason
         for idx in scan.skipped_indices:
             skipped_or_suspicious.append(
@@ -424,6 +452,25 @@ def _build_references_diagnostics(
                     "reason": "reference_entry_start_not_found",
                 }
             )
+    for text in entry_texts:
+        parsed = parse_reference_entry(text)
+        if parsed.entry_type != "unknown" or parsed.title is not None or parsed.authors:
+            parsed_count += 1
+        reference_type_counts[parsed.entry_type] = reference_type_counts.get(parsed.entry_type, 0) + 1
+        if parsed.parse_confidence == "high":
+            parsed_high_confidence_count += 1
+        if parsed.parse_confidence == "low":
+            parsed_low_confidence_count += 1
+            unresolved_reference_entries.append(
+                {
+                    "index_number": parsed.index_number,
+                    "entry_type": parsed.entry_type,
+                    "raw_text": parsed.raw_text,
+                    "parse_notes": list(parsed.parse_notes),
+                }
+            )
+
+    unresolved_reference_entries = unresolved_reference_entries[:5]
 
     ref_fix_record = next((item for item in records if item.rule_id == "FR-4.11-02"), None)
     entries_fixed = 0
@@ -449,6 +496,12 @@ def _build_references_diagnostics(
         "numbered_reference_entry_count": numbered_entry_count,
         "author_leading_reference_entry_count": author_leading_entry_count,
         "reference_entries_fixed": entries_fixed,
+        "reference_entry_count": entries_detected,
+        "reference_parsed_count": parsed_count,
+        "reference_parse_high_confidence_count": parsed_high_confidence_count,
+        "reference_parse_low_confidence_count": parsed_low_confidence_count,
+        "reference_type_counts": reference_type_counts,
+        "unresolved_reference_entries": unresolved_reference_entries,
         "scan_stop_reason": scan_stop_reason,
         "suspicious_reference_candidate_count": len(skipped_or_suspicious),
         "skipped_or_suspicious": skipped_or_suspicious,
