@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thesis-format-fixer"
+version = "0.1.0"
+description = "English thesis DOCX format checker/fixer skeleton"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+authors = [{ name = "Thesis Format Fixer Contributors" }]
+dependencies = []
+
+[project.scripts]
+thesis-format-fixer = "thesis_format_fixer.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
