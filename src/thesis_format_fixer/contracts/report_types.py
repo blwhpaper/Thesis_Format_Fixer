@@ -37,6 +37,31 @@ class RuleExecutionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ReferenceCheckFinding:
+    rule_id: str
+    severity: str
+    scope: str
+    entry_index: int | None
+    message: str
+    evidence: dict[str, Any] = field(default_factory=dict)
+    suggested_action: str = ""
+    is_auto_fixable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceCheckResult:
+    findings: tuple[ReferenceCheckFinding, ...]
+    entry_findings: tuple[ReferenceCheckFinding, ...]
+    collection_findings: tuple[ReferenceCheckFinding, ...]
+    english_count: int
+    chinese_count: int
+    unknown_count: int
+    rule_counts: dict[str, int] = field(default_factory=dict)
+    error_count: int = 0
+    warning_count: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionReport:
     auto_fixed: tuple[RuleExecutionRecord, ...]
     auto_checked: tuple[RuleExecutionRecord, ...]

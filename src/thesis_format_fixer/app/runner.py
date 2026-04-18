@@ -17,6 +17,7 @@ from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_surface_docx
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.reporters.report_builder import build_report, summarize_a_class_hit_surface
+from thesis_format_fixer.review.reference_checkers import finding_to_payload, run_reference_checks
 from thesis_format_fixer.review.model_adapter import LocalModelAdapter
 from thesis_format_fixer.review.reviewer import REVIEW_TARGETS, ReviewConfig, Reviewer
 from thesis_format_fixer.rules.registry import RuleRegistry
@@ -189,6 +190,20 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         "- "
         + f"reference_parse_low_confidence_count: {references_diag.get('reference_parse_low_confidence_count', 0)}"
     )
+    lines.append(f"- reference_check_finding_count: {references_diag.get('reference_check_finding_count', 0)}")
+    lines.append(f"- reference_check_error_count: {references_diag.get('reference_check_error_count', 0)}")
+    lines.append(f"- reference_check_warning_count: {references_diag.get('reference_check_warning_count', 0)}")
+    lines.append(f"- reference_english_count: {references_diag.get('reference_english_count', 0)}")
+    lines.append(f"- reference_chinese_count: {references_diag.get('reference_chinese_count', 0)}")
+    lines.append(f"- reference_unknown_count: {references_diag.get('reference_unknown_count', 0)}")
+    lines.append(
+        "- "
+        + f"reference_collection_findings: {len(references_diag.get('reference_collection_findings', []))}"
+    )
+    lines.append(
+        "- "
+        + f"reference_entry_findings_sample: {len(references_diag.get('reference_entry_findings_sample', []))}"
+    )
 
     lines.extend(["", "## 需人工复核", ""])
     manual_items = sections["manual_review_required"]
@@ -360,6 +375,12 @@ def _build_single_payload(
             "reference_parse_low_confidence_count": references_diagnostics[
                 "reference_parse_low_confidence_count"
             ],
+            "reference_check_finding_count": references_diagnostics["reference_check_finding_count"],
+            "reference_check_error_count": references_diagnostics["reference_check_error_count"],
+            "reference_check_warning_count": references_diagnostics["reference_check_warning_count"],
+            "reference_english_count": references_diagnostics["reference_english_count"],
+            "reference_chinese_count": references_diagnostics["reference_chinese_count"],
+            "reference_unknown_count": references_diagnostics["reference_unknown_count"],
             "suspicious_reference_candidate_count": references_diagnostics[
                 "suspicious_reference_candidate_count"
             ],
@@ -406,6 +427,7 @@ def _build_references_diagnostics(
     parsed_low_confidence_count = 0
     reference_type_counts: dict[str, int] = {}
     unresolved_reference_entries: list[dict[str, Any]] = []
+    parsed_entries: list[Any] = []
     entry_texts: list[str] = []
     scan_stop_reason = "references_heading_not_found"
     skipped_or_suspicious: list[dict[str, Any]] = []
@@ -454,6 +476,7 @@ def _build_references_diagnostics(
             )
     for text in entry_texts:
         parsed = parse_reference_entry(text)
+        parsed_entries.append(parsed)
         if parsed.entry_type != "unknown" or parsed.title is not None or parsed.authors:
             parsed_count += 1
         reference_type_counts[parsed.entry_type] = reference_type_counts.get(parsed.entry_type, 0) + 1
@@ -471,6 +494,8 @@ def _build_references_diagnostics(
             )
 
     unresolved_reference_entries = unresolved_reference_entries[:5]
+    parsed_entries_tuple = tuple(parsed_entries)
+    reference_check_result = run_reference_checks(parsed_entries_tuple)
 
     ref_fix_record = next((item for item in records if item.rule_id == "FR-4.11-02"), None)
     entries_fixed = 0
@@ -502,6 +527,19 @@ def _build_references_diagnostics(
         "reference_parse_low_confidence_count": parsed_low_confidence_count,
         "reference_type_counts": reference_type_counts,
         "unresolved_reference_entries": unresolved_reference_entries,
+        "reference_check_finding_count": len(reference_check_result.findings),
+        "reference_check_error_count": reference_check_result.error_count,
+        "reference_check_warning_count": reference_check_result.warning_count,
+        "reference_check_rule_counts": dict(reference_check_result.rule_counts),
+        "reference_collection_findings": [
+            finding_to_payload(item) for item in reference_check_result.collection_findings
+        ],
+        "reference_entry_findings_sample": [
+            finding_to_payload(item) for item in reference_check_result.entry_findings[:10]
+        ],
+        "reference_english_count": reference_check_result.english_count,
+        "reference_chinese_count": reference_check_result.chinese_count,
+        "reference_unknown_count": reference_check_result.unknown_count,
         "scan_stop_reason": scan_stop_reason,
         "suspicious_reference_candidate_count": len(skipped_or_suspicious),
         "skipped_or_suspicious": skipped_or_suspicious,
