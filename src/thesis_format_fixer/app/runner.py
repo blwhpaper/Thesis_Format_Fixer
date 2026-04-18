@@ -11,6 +11,7 @@ from typing import Any
 
 from thesis_format_fixer.contracts.report_types import RuleExecutionRecord
 from thesis_format_fixer.detectors.block_locator import locate_blocks
+from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.reporters.report_builder import build_report
 from thesis_format_fixer.rules.registry import RuleRegistry
@@ -76,11 +77,35 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
     else:
         lines.append("- (none)")
 
+    lines.extend(["", "## 已自动修复的脚注样式项", ""])
+    footnotes_fixed = sections["auto_fixed_footnotes"]
+    if footnotes_fixed:
+        for item in footnotes_fixed:
+            lines.append(f"- {item['rule_id']} {item['rule_name']} [{item['status']}]")
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## 已自动修复的参考文献基础样式项", ""])
+    bibliography_fixed = sections["auto_fixed_bibliography"]
+    if bibliography_fixed:
+        for item in bibliography_fixed:
+            lines.append(f"- {item['rule_id']} {item['rule_name']} [{item['status']}]")
+    else:
+        lines.append("- (none)")
+
     lines.extend(["", "## 检测到异常但未自动修改", ""])
     not_modified = sections["detected_not_auto_modified"]
     if not_modified:
         for item in not_modified:
             lines.append(f"- {item['rule_id']} {item['rule_name']} [{item['decision']}]")
+    else:
+        lines.append("- (none)")
+
+    lines.extend(["", "## 检测到但未自动修改的专项问题", ""])
+    special_not_modified = sections["detected_special_issues_not_modified"]
+    if special_not_modified:
+        for item in special_not_modified:
+            lines.append(f"- {item['rule_id']} {item['rule_name']}: {item['details']}")
     else:
         lines.append("- (none)")
 
@@ -105,15 +130,34 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
 
 
 def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) -> dict[str, Any]:
-    context = load_document(input_file)
+    working_file = output_docx if output_docx is not None else input_file
+    context = load_document(working_file)
     block_map = locate_blocks(context)
     registry = RuleRegistry()
-    report = build_report(_build_skeleton_records(registry))
+    records = _build_skeleton_records(registry)
 
-    auto_fixed = [_record_to_payload(item, registry=registry) for item in report.auto_fixed]
+    if working_file.suffix.lower() == ".docx" and working_file.exists():
+        task006 = execute_task006_docx(working_file, apply_fixes=output_docx is not None)
+        _merge_rule_updates(records, task006.updates)
+
+    report = build_report(records)
+
+    auto_fixed = [
+        _record_to_payload(item, registry=registry) for item in report.auto_fixed if item.status == "fixed"
+    ]
+    auto_fixed_footnotes = [
+        item for item in auto_fixed if item["rule_id"] in {"FR-4.10-02", "FR-4.10-03", "FR-4.10-04"}
+    ]
+    auto_fixed_bibliography = [item for item in auto_fixed if item["rule_id"] == "FR-4.11-02"]
     detected_not_auto_modified = [
         _record_to_payload(item, registry=registry)
-        for item in (*report.auto_checked, *report.report_only)
+        for item in (*report.auto_fixed, *report.auto_checked, *report.report_only)
+        if item.status == "detected_not_modified"
+    ]
+    detected_special_issues_not_modified = [
+        item
+        for item in detected_not_auto_modified
+        if item["rule_id"] in {"FR-4.10-02", "FR-4.10-03", "FR-4.10-04", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06"}
     ]
     manual_review_required: list[dict[str, Any]] = [
         {
@@ -139,13 +183,16 @@ def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) 
         )
 
     return {
-        "schema_version": "task-005-report-v1",
+        "schema_version": "task-006-report-v1",
         "generated_at": _utc_now_iso(),
         "input_file": str(input_file),
         "output_docx": str(output_docx) if output_docx is not None else None,
         "summary": {
             "auto_fix_rule_count": len(auto_fixed),
+            "auto_fix_footnote_count": len(auto_fixed_footnotes),
+            "auto_fix_bibliography_count": len(auto_fixed_bibliography),
             "detected_not_auto_modified_count": len(detected_not_auto_modified),
+            "detected_special_issues_not_modified_count": len(detected_special_issues_not_modified),
             "manual_review_required_count": len(manual_review_required),
             "block_low_confidence_count": sum(
                 1
@@ -155,7 +202,10 @@ def _build_single_payload(input_file: Path, *, output_docx: Path | None = None) 
         },
         "sections": {
             "auto_fixed": auto_fixed,
+            "auto_fixed_footnotes": auto_fixed_footnotes,
+            "auto_fixed_bibliography": auto_fixed_bibliography,
             "detected_not_auto_modified": detected_not_auto_modified,
+            "detected_special_issues_not_modified": detected_special_issues_not_modified,
             "manual_review_required": manual_review_required,
         },
         "capabilities": asdict(context.capabilities),
@@ -176,11 +226,11 @@ def _run_single(
     report_json_out: Path | None,
     report_md_out: Path | None,
 ) -> tuple[int, dict[str, Any], Path | None, Path | None]:
-    payload = _build_single_payload(input_file, output_docx=output_docx)
-
     if output_docx is not None:
         output_docx.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(input_file, output_docx)
+
+    payload = _build_single_payload(input_file, output_docx=output_docx)
 
     final_json_out: Path | None = report_json_out
     final_md_out: Path | None = report_md_out
@@ -220,6 +270,24 @@ def _build_skeleton_records(registry: RuleRegistry) -> list[RuleExecutionRecord]
             )
         )
     return records
+
+
+def _merge_rule_updates(records: list[RuleExecutionRecord], updates: dict[str, Any]) -> None:
+    indexed = {record.rule_id: idx for idx, record in enumerate(records)}
+    for rule_id, update in updates.items():
+        idx = indexed.get(rule_id)
+        if idx is None:
+            continue
+        current = records[idx]
+        records[idx] = RuleExecutionRecord(
+            rule_id=current.rule_id,
+            decision=current.decision,
+            status=update.status,
+            checked_only=current.checked_only,
+            excluded_by_scope=current.excluded_by_scope,
+            evidence=update.evidence,
+            details={**current.details, **update.details},
+        )
 
 
 

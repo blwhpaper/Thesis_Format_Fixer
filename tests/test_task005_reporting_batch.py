@@ -27,13 +27,16 @@ def test_run_fix_writes_docx_and_reports(tmp_path: Path) -> None:
     assert report_md.exists()
 
     payload = json.loads(report_json.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == "task-005-report-v1"
+    assert payload["schema_version"] == "task-006-report-v1"
     assert payload["input_file"] == str(input_file)
     assert payload["output_docx"] == str(output_file)
     assert "sections" in payload
     assert set(payload["sections"]) == {
         "auto_fixed",
+        "auto_fixed_footnotes",
+        "auto_fixed_bibliography",
         "detected_not_auto_modified",
+        "detected_special_issues_not_modified",
         "manual_review_required",
     }
 
@@ -85,4 +88,3 @@ def test_cli_batch_fix_non_recursive(tmp_path: Path) -> None:
 
     assert (output_dir / "top.fixed.docx").exists()
     assert not (output_dir / "sub" / "nested.fixed.docx").exists()
-
