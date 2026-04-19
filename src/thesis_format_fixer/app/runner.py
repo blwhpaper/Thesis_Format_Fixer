@@ -9,7 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from thesis_format_fixer.contracts.report_types import RuleExecutionRecord
+from thesis_format_fixer.contracts.report_types import (
+    ReferencePrioritySummary,
+    ReferenceReviewQueueItem,
+    RuleExecutionRecord,
+)
 from thesis_format_fixer.contracts.review_types import IntelligentReviewReport, ReviewFinding
 from thesis_format_fixer.detectors.block_locator import locate_blocks, scan_reference_entries
 from thesis_format_fixer.detectors.reference_parser import parse_reference_entry
@@ -18,6 +22,7 @@ from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_s
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.reporters.report_builder import build_report, summarize_a_class_hit_surface
 from thesis_format_fixer.review.reference_checkers import finding_to_payload, run_reference_checks
+from thesis_format_fixer.review.finding_prioritizer import build_reference_review_queue
 from thesis_format_fixer.review.model_adapter import LocalModelAdapter
 from thesis_format_fixer.review.reviewer import REVIEW_TARGETS, ReviewConfig, Reviewer
 from thesis_format_fixer.rules.registry import RuleRegistry
@@ -87,6 +92,35 @@ def _intelligent_review_payload(report: IntelligentReviewReport) -> dict[str, An
         "degraded_reasons": list(report.degraded_reasons),
         "findings": [_review_finding_to_payload(item) for item in report.findings],
         "metadata": dict(report.metadata),
+    }
+
+
+def _reference_priority_summary_payload(item: ReferencePrioritySummary) -> dict[str, int]:
+    return {
+        "total_count": item.total_count,
+        "blocking_count": item.blocking_count,
+        "p0_count": item.p0_count,
+        "p1_count": item.p1_count,
+        "p2_count": item.p2_count,
+    }
+
+
+def _reference_review_queue_item_payload(item: ReferenceReviewQueueItem) -> dict[str, Any]:
+    return {
+        "finding_index": item.finding_index,
+        "rule_id": item.rule_id,
+        "severity": item.severity,
+        "scope": item.scope,
+        "entry_index": item.entry_index,
+        "message": item.message,
+        "evidence": dict(item.evidence),
+        "suggested_action": item.suggested_action,
+        "is_auto_fixable": item.is_auto_fixable,
+        "priority_bucket": item.priority_bucket,
+        "priority_score": item.priority_score,
+        "review_action": item.review_action.value,
+        "review_reason": item.review_reason,
+        "is_blocking": item.is_blocking,
     }
 
 
@@ -205,6 +239,30 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         + f"reference_entry_findings_sample: {len(references_diag.get('reference_entry_findings_sample', []))}"
     )
 
+    lines.extend(["", "## 参考文献人工复核队列", ""])
+    reference_review = sections.get("reference_review", {})
+    priority_summary = reference_review.get("reference_priority_summary", {})
+    lines.append(f"- reference_finding_count: {reference_review.get('reference_finding_count', 0)}")
+    lines.append(f"- reference_blocking_count: {reference_review.get('reference_blocking_count', 0)}")
+    lines.append(
+        "- "
+        + "priority_distribution: "
+        + f"P0={priority_summary.get('p0_count', 0)} "
+        + f"P1={priority_summary.get('p1_count', 0)} "
+        + f"P2={priority_summary.get('p2_count', 0)}"
+    )
+    queue = reference_review.get("reference_review_queue", [])
+    if queue:
+        for item in queue:
+            lines.append(
+                "- "
+                + f"[{item['priority_bucket']}] {item['rule_id']} "
+                + f"blocking={item['is_blocking']} action={item['review_action']} "
+                + f"reason={item['review_reason']}"
+            )
+    else:
+        lines.append("- reference_review_queue: (none)")
+
     lines.extend(["", "## 需人工复核", ""])
     manual_items = sections["manual_review_required"]
     if manual_items:
@@ -286,6 +344,9 @@ def _build_single_payload(
         block_map=block_map,
         records=records,
     )
+    reference_priority_summary = references_diagnostics["reference_priority_summary"]
+    reference_review_queue = references_diagnostics["reference_review_queue"]
+    top_priority_findings = references_diagnostics["top_priority_findings"]
 
     auto_fixed = [
         _record_to_payload(item, registry=registry) for item in report.auto_fixed if item.status == "fixed"
@@ -339,6 +400,13 @@ def _build_single_payload(
             "degraded": [_record_to_payload(item, registry=registry) for item in a_surface.degraded],
         },
         "references_diagnostics": references_diagnostics,
+        "reference_review": {
+            "reference_finding_count": references_diagnostics["reference_finding_count"],
+            "reference_blocking_count": references_diagnostics["reference_blocking_count"],
+            "reference_priority_summary": reference_priority_summary,
+            "reference_review_queue": reference_review_queue,
+            "top_priority_findings": top_priority_findings,
+        },
         "manual_review_required": manual_review_required,
     }
 
@@ -376,8 +444,11 @@ def _build_single_payload(
                 "reference_parse_low_confidence_count"
             ],
             "reference_check_finding_count": references_diagnostics["reference_check_finding_count"],
+            "reference_finding_count": references_diagnostics["reference_finding_count"],
             "reference_check_error_count": references_diagnostics["reference_check_error_count"],
             "reference_check_warning_count": references_diagnostics["reference_check_warning_count"],
+            "reference_blocking_count": references_diagnostics["reference_blocking_count"],
+            "reference_priority_summary": reference_priority_summary,
             "reference_english_count": references_diagnostics["reference_english_count"],
             "reference_chinese_count": references_diagnostics["reference_chinese_count"],
             "reference_unknown_count": references_diagnostics["reference_unknown_count"],
@@ -496,6 +567,7 @@ def _build_references_diagnostics(
     unresolved_reference_entries = unresolved_reference_entries[:5]
     parsed_entries_tuple = tuple(parsed_entries)
     reference_check_result = run_reference_checks(parsed_entries_tuple)
+    reference_review_queue = build_reference_review_queue(reference_check_result.findings)
 
     ref_fix_record = next((item for item in records if item.rule_id == "FR-4.11-02"), None)
     entries_fixed = 0
@@ -528,8 +600,17 @@ def _build_references_diagnostics(
         "reference_type_counts": reference_type_counts,
         "unresolved_reference_entries": unresolved_reference_entries,
         "reference_check_finding_count": len(reference_check_result.findings),
+        "reference_finding_count": len(reference_check_result.findings),
         "reference_check_error_count": reference_check_result.error_count,
         "reference_check_warning_count": reference_check_result.warning_count,
+        "reference_blocking_count": reference_review_queue.summary.blocking_count,
+        "reference_priority_summary": _reference_priority_summary_payload(reference_review_queue.summary),
+        "reference_review_queue": [
+            _reference_review_queue_item_payload(item) for item in reference_review_queue.queue
+        ],
+        "top_priority_findings": [
+            _reference_review_queue_item_payload(item) for item in reference_review_queue.top_priority_findings
+        ],
         "reference_check_rule_counts": dict(reference_check_result.rule_counts),
         "reference_collection_findings": [
             finding_to_payload(item) for item in reference_check_result.collection_findings
