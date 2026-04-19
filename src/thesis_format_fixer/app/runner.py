@@ -368,7 +368,8 @@ def _build_single_payload(
     detected_special_issues_not_modified = [
         item
         for item in detected_not_auto_modified
-        if item["rule_id"] in {"FR-4.10-02", "FR-4.10-03", "FR-4.10-04", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06"}
+        if item["rule_id"]
+        in {"FR-4.9-02", "FR-4.10-02", "FR-4.10-03", "FR-4.10-04", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06"}
     ]
     manual_review_required: list[dict[str, Any]] = [
         {

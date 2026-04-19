@@ -27,6 +27,23 @@ LINE_25PT_TWIPS = "500"
 LINE_SINGLE_TWIPS = "240"
 TITLE_BEFORE_TWIPS = "360"
 TITLE_AFTER_TWIPS = "240"
+PUNCTUATION_REPLACEMENTS: dict[str, str] = {
+    "，": ",",
+    "。": ".",
+    "：": ":",
+    "；": ";",
+    "（": "(",
+    "）": ")",
+    "？": "?",
+    "！": "!",
+}
+PUNCTUATION_TARGETS = frozenset(PUNCTUATION_REPLACEMENTS)
+OUTER_CHINESE_QUOTES = {
+    "“": "”",
+    "「": "」",
+    "『": "』",
+    "《": "》",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +140,100 @@ def execute_task008_a_surface_docx(
             details={"target_blocks": list(block_ids), "target_count": len(target_refs)},
         )
         modified |= changed
+
+    body_refs, body_evidence, body_status, body_degraded = _resolve_targets(
+        block_map,
+        block_ids=("body",),
+        by_context_index=by_context_index,
+        confidence_threshold=confidence_threshold,
+    )
+    punctuation_candidate_count = 0
+    punctuation_changed_count = 0
+    punctuation_changed_paragraph_count = 0
+    punctuation_skip_reasons: dict[str, int] = {}
+    punctuation_skip_examples: list[dict[str, Any]] = []
+    punctuation_changed = False
+    if body_status == "applicable":
+        for item in body_refs:
+            replacement_count = _count_replaceable_punctuation(item.text)
+            if replacement_count == 0:
+                continue
+            punctuation_candidate_count += 1
+            skip_reason = _body_paragraph_skip_reason(item.text)
+            if skip_reason is not None:
+                punctuation_skip_reasons[skip_reason] = punctuation_skip_reasons.get(skip_reason, 0) + 1
+                if len(punctuation_skip_examples) < 5:
+                    punctuation_skip_examples.append(
+                        {
+                            "paragraph_index": item.context_index,
+                            "reason": skip_reason,
+                            "snippet": item.text[:160],
+                        }
+                    )
+                continue
+            candidate_text, count = _replace_body_punctuation_safely(item.text)
+            if count <= 0:
+                continue
+            if apply_fixes:
+                changed = _replace_paragraph_text(item.element, candidate_text)
+                punctuation_changed |= changed
+                if changed:
+                    punctuation_changed_paragraph_count += 1
+                    punctuation_changed_count += count
+            else:
+                punctuation_changed_count += count
+                punctuation_changed_paragraph_count += 1
+
+    punctuation_details = {
+        "target_blocks": ["body"],
+        "target_count": len(body_refs),
+        "candidate_paragraph_count": punctuation_candidate_count,
+        "changed_paragraph_count": punctuation_changed_paragraph_count if apply_fixes else 0,
+        "replacement_count": punctuation_changed_count if apply_fixes else 0,
+        "would_change_paragraph_count": punctuation_changed_paragraph_count if not apply_fixes else 0,
+        "would_replacement_count": punctuation_changed_count if not apply_fixes else 0,
+        "skipped_candidate_count": sum(punctuation_skip_reasons.values()),
+        "skipped_reason_counts": punctuation_skip_reasons,
+        "skipped_examples": punctuation_skip_examples,
+    }
+    if body_status == "not_applicable":
+        updates["FR-4.9-02"] = RuleUpdate(
+            status="not_applicable",
+            evidence=body_evidence,
+            details={**punctuation_details, "reason": "target_not_found"},
+        )
+    elif body_status == "degraded":
+        updates["FR-4.9-02"] = RuleUpdate(
+            status="detected_not_modified",
+            evidence=body_evidence,
+            details={**punctuation_details, "reason": "low_confidence_block"},
+        )
+    elif punctuation_changed_paragraph_count > 0:
+        if apply_fixes:
+            updates["FR-4.9-02"] = RuleUpdate(
+                status="fixed",
+                evidence=body_evidence,
+                details=punctuation_details,
+            )
+        else:
+            updates["FR-4.9-02"] = RuleUpdate(
+                status="detected_not_modified",
+                evidence=body_evidence,
+                details={**punctuation_details, "reason": "check_mode_no_write"},
+            )
+    elif punctuation_candidate_count > 0 and sum(punctuation_skip_reasons.values()) > 0:
+        updates["FR-4.9-02"] = RuleUpdate(
+            status="detected_not_modified",
+            evidence=body_evidence,
+            details={**punctuation_details, "reason": "high_risk_candidates_skipped"},
+        )
+    else:
+        updates["FR-4.9-02"] = RuleUpdate(
+            status="checked_ok",
+            evidence=body_evidence,
+            details={**punctuation_details, "reason": "no_replaceable_punctuation"},
+        )
+    modified |= punctuation_changed
 
     references_style = _style(
         font=FONT_TNR,
@@ -408,6 +519,81 @@ def _block_evidence(block: Any, name: str) -> tuple[Evidence, ...]:
 
 def _paragraph_text(paragraph: ET.Element) -> str:
     return "".join((item.text or "") for item in paragraph.findall(".//w:t", NS))
+
+
+def _body_paragraph_skip_reason(text: str) -> str | None:
+    stripped = text.strip()
+    if not stripped:
+        return "empty_paragraph"
+    outer_quote = OUTER_CHINESE_QUOTES.get(stripped[0])
+    if outer_quote is not None and stripped.endswith(outer_quote):
+        return "chinese_quote_wrapped"
+
+    latin_count = sum(1 for ch in stripped if ("A" <= ch <= "Z") or ("a" <= ch <= "z"))
+    cjk_count = sum(1 for ch in stripped if "\u4e00" <= ch <= "\u9fff")
+    if latin_count < 6:
+        return "english_signal_too_weak"
+    if cjk_count == 0:
+        return None
+    language_total = latin_count + cjk_count
+    if language_total <= 0:
+        return "language_signal_missing"
+    cjk_ratio = cjk_count / language_total
+    if cjk_ratio >= 0.25:
+        return "mixed_language_high_risk"
+    return None
+
+
+def _count_replaceable_punctuation(text: str) -> int:
+    _, count = _replace_body_punctuation_safely(text)
+    return count
+
+
+def _replace_body_punctuation_safely(text: str) -> tuple[str, int]:
+    chars = list(text)
+    expected_closers: list[str] = []
+    replacement_count = 0
+
+    for idx, ch in enumerate(chars):
+        if expected_closers and ch == expected_closers[-1]:
+            expected_closers.pop()
+            continue
+        closer = OUTER_CHINESE_QUOTES.get(ch)
+        if closer is not None:
+            expected_closers.append(closer)
+            continue
+        if expected_closers:
+            continue
+        replacement = PUNCTUATION_REPLACEMENTS.get(ch)
+        if replacement is None:
+            continue
+        chars[idx] = replacement
+        replacement_count += 1
+
+    return "".join(chars), replacement_count
+
+
+def _replace_paragraph_text(paragraph: ET.Element, updated_text: str) -> bool:
+    text_nodes = paragraph.findall(".//w:t", NS)
+    if not text_nodes:
+        return False
+    original = "".join((node.text or "") for node in text_nodes)
+    if original == updated_text:
+        return False
+
+    changed = False
+    cursor = 0
+    for idx, node in enumerate(text_nodes):
+        original_chunk = node.text or ""
+        if idx == len(text_nodes) - 1:
+            new_chunk = updated_text[cursor:]
+        else:
+            new_chunk = updated_text[cursor : cursor + len(original_chunk)]
+            cursor += len(original_chunk)
+        if node.text != new_chunk:
+            node.text = new_chunk
+            changed = True
+    return changed
 
 
 def _apply_paragraph_style(paragraph: ET.Element, style: dict[str, str | bool]) -> bool:
