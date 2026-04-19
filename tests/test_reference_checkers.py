@@ -73,6 +73,13 @@ def test_reference_checker_thesis_missing_year_yields_entry_finding() -> None:
     assert any(item.scope == "entry" and item.evidence.get("check") == "year_missing" for item in result.findings)
 
 
+def test_reference_checker_d_type_with_pages_yields_entry_finding() -> None:
+    entries = _parse_entries(["[1] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院, 2023, 98-100."])
+    result = run_reference_checks(entries, current_year=2026)
+
+    assert any(item.scope == "entry" and item.rule_id == "FR-4.11-07" for item in result.findings)
+
+
 def test_reference_checker_electronic_missing_url_yields_entry_finding() -> None:
     entries = _parse_entries(["[1] Lee C. Online source[EB/OL]. Database of Studies, 2024."])
     result = run_reference_checks(entries, current_year=2026)
@@ -168,4 +175,3 @@ def test_runner_report_exposes_reference_checker_statistics_and_samples(tmp_path
     assert "reference_english_count" in summary
     assert "reference_chinese_count" in summary
     assert "reference_unknown_count" in summary
-

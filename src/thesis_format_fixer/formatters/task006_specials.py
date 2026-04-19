@@ -128,6 +128,7 @@ def execute_task006_docx(path: Path, *, apply_fixes: bool) -> Task006Execution:
                 "FR-4.10-04": _unsupported("footnotes_part_unreadable"),
                 "FR-4.11-02": _unsupported("references_block_unreadable"),
                 "FR-4.11-03": _unsupported("references_block_unreadable"),
+                "FR-4.11-07": _unsupported("references_block_unreadable"),
                 "FR-4.11-04": _unsupported("references_block_unreadable"),
                 "FR-4.11-05": _unsupported("references_block_unreadable"),
                 "FR-4.11-06": _unsupported("references_block_unreadable"),
@@ -166,10 +167,10 @@ def execute_task006_docx(path: Path, *, apply_fixes: bool) -> Task006Execution:
                 raw_parts["word/document.xml"] = ET.tostring(document_root, encoding="utf-8", xml_declaration=True)
                 modified = True
         except ET.ParseError:
-            for rule_id in ("FR-4.11-02", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06"):
+            for rule_id in ("FR-4.11-02", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06", "FR-4.11-07"):
                 updates[rule_id] = _unsupported("document_xml_parse_error")
     else:
-        for rule_id in ("FR-4.11-02", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06"):
+        for rule_id in ("FR-4.11-02", "FR-4.11-03", "FR-4.11-04", "FR-4.11-05", "FR-4.11-06", "FR-4.11-07"):
             updates[rule_id] = _unsupported("document_xml_missing")
 
     if "word/endnotes.xml" in names:
@@ -276,6 +277,7 @@ def _fix_and_check_references(
         updates = {
             "FR-4.11-02": RuleUpdate(status="detected_not_modified", evidence=(), details={"issue": "references_heading_not_found"}),
             "FR-4.11-03": RuleUpdate(status="detected_not_modified", evidence=(), details={"issue": "references_heading_not_found"}),
+            "FR-4.11-07": RuleUpdate(status="detected_not_modified", evidence=(), details={"issue": "references_heading_not_found"}),
             "FR-4.11-04": RuleUpdate(status="detected_not_modified", evidence=(), details={"issue": "references_heading_not_found"}),
             "FR-4.11-05": RuleUpdate(status="detected_not_modified", evidence=(), details={"issue": "references_heading_not_found"}),
             "FR-4.11-06": RuleUpdate(status="detected_not_modified", evidence=(), details={"issue": "references_heading_not_found"}),
@@ -291,6 +293,7 @@ def _fix_and_check_references(
         updates = {
             "FR-4.11-02": RuleUpdate(status="not_applicable", evidence=evidence, details={"entries": 0}),
             "FR-4.11-03": RuleUpdate(status="detected_not_modified", evidence=evidence, details={"issue": "reference_entries_not_found"}),
+            "FR-4.11-07": RuleUpdate(status="not_applicable", evidence=evidence, details={"entries": 0}),
             "FR-4.11-04": RuleUpdate(status="not_applicable", evidence=evidence, details={"entries": 0}),
             "FR-4.11-05": RuleUpdate(status="not_applicable", evidence=evidence, details={"entries": 0}),
             "FR-4.11-06": RuleUpdate(status="not_applicable", evidence=evidence, details={"entries": 0}),
@@ -298,8 +301,20 @@ def _fix_and_check_references(
         return updates, changed
 
     changed_entries = 0
+    d_type_page_violation_count = 0
+    d_type_page_fixed_count = 0
+    d_type_page_skipped_count = 0
     for entry in entries:
         entry_changed = False
+        has_d_pages, normalized_entry_text = _strip_d_type_pages(entry.text)
+        if has_d_pages:
+            d_type_page_violation_count += 1
+            if apply_fixes and len(entry.paragraphs) == 1 and normalized_entry_text and normalized_entry_text != entry.text:
+                if _replace_paragraph_text(entry.paragraphs[0], normalized_entry_text):
+                    entry_changed = True
+                    d_type_page_fixed_count += 1
+            else:
+                d_type_page_skipped_count += 1
         for paragraph in entry.paragraphs:
             if apply_fixes and _set_paragraph_spacing(paragraph, line=LINE_25PT_TWIPS, line_rule="exact"):
                 entry_changed = True
@@ -348,6 +363,22 @@ def _fix_and_check_references(
                 "sequence_ok": sequence_ok,
                 "rough_format_ok": rough_format_ok,
                 "invalid_examples": invalid_examples,
+            },
+        ),
+        "FR-4.11-07": RuleUpdate(
+            status=(
+                "fixed"
+                if apply_fixes and d_type_page_violation_count > 0 and d_type_page_skipped_count == 0
+                else ("checked_ok" if d_type_page_violation_count == 0 else "detected_not_modified")
+            ),
+            evidence=evidence,
+            details={
+                "issue": None
+                if d_type_page_violation_count == 0 or (apply_fixes and d_type_page_skipped_count == 0)
+                else "d_type_pages_present",
+                "d_type_page_violation_count": d_type_page_violation_count,
+                "d_type_page_fixed_count": d_type_page_fixed_count,
+                "d_type_page_skipped_count": d_type_page_skipped_count,
             },
         ),
         "FR-4.11-04": RuleUpdate(
@@ -650,3 +681,30 @@ def _set_attr(node: ET.Element, name: str, value: str) -> bool:
         return False
     node.set(name, value)
     return True
+
+
+def _replace_paragraph_text(paragraph: ET.Element, new_text: str) -> bool:
+    if _paragraph_text(paragraph) == new_text:
+        return False
+    for run in list(paragraph.findall("w:r", NS)):
+        paragraph.remove(run)
+    run = ET.SubElement(paragraph, f"{{{W_NS}}}r")
+    text_node = ET.SubElement(run, f"{{{W_NS}}}t")
+    if new_text[:1].isspace() or new_text[-1:].isspace():
+        text_node.set("{http://www.w3.org/XML/1998/namespace}space", "preserve")
+    text_node.text = new_text
+    return True
+
+
+def _strip_d_type_pages(text: str) -> tuple[bool, str]:
+    if "[D" not in text.upper():
+        return False, text
+    updated = text
+    for pattern in (
+        r"([,，:：]\s*)\d+\s*[-–—]\s*\d+\s*(?=[\.\。]|$)",
+        r"\bpp?\.?\s*\d+\s*[-–—]\s*\d+\s*(?=[\.\。]|$)",
+    ):
+        updated = re.sub(pattern, "", updated, flags=re.IGNORECASE)
+    updated = re.sub(r"\s{2,}", " ", updated).strip()
+    updated = re.sub(r"[，,]\s*(?=[\.\。]|$)", "", updated)
+    return updated != text, updated

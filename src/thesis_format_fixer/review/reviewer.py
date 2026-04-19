@@ -15,8 +15,10 @@ from thesis_format_fixer.detectors.block_locator import BlockMap
 from thesis_format_fixer.io.document_loader import DocumentContext
 from thesis_format_fixer.review.checkers import (
     body_english_punctuation_review,
+    english_book_title_marks_review,
     heading_structure_review,
     pagination_review,
+    reference_d_type_pages_review,
     reference_structure_review,
 )
 from thesis_format_fixer.review.model_adapter import (
@@ -26,7 +28,14 @@ from thesis_format_fixer.review.model_adapter import (
     PlaceholderLocalModelAdapter,
 )
 
-REVIEW_TARGETS = ("headings", "references", "pagination", "body_english_punctuation")
+REVIEW_TARGETS = (
+    "headings",
+    "references",
+    "pagination",
+    "body_english_punctuation",
+    "english_title_marks",
+    "reference_d_type_pages",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +50,8 @@ _TARGET_TO_TASK = {
     "references": "reference_structure_review",
     "pagination": "pagination_review",
     "body_english_punctuation": "body_english_punctuation_review",
+    "english_title_marks": "english_book_title_marks_review",
+    "reference_d_type_pages": "reference_d_type_pages_review",
 }
 
 
@@ -126,6 +137,10 @@ def _run_rule_engine_target(target: str, context: DocumentContext, block_map: Bl
         return pagination_review(context, block_map)
     if target == "body_english_punctuation":
         return body_english_punctuation_review(context, block_map)
+    if target == "english_title_marks":
+        return english_book_title_marks_review(context, block_map)
+    if target == "reference_d_type_pages":
+        return reference_d_type_pages_review(context, block_map)
     return ()
 
 
@@ -167,6 +182,10 @@ def _task_rule_ids(task: str) -> list[str]:
         return ["FR-4.15-01", "FR-4.15-03"]
     if task == "body_english_punctuation_review":
         return ["FR-4.9-02"]
+    if task == "english_book_title_marks_review":
+        return ["FR-4.5-06"]
+    if task == "reference_d_type_pages_review":
+        return ["FR-4.11-07"]
     return []
 
 

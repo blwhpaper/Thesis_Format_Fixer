@@ -5,11 +5,11 @@ from thesis_format_fixer.rules.registry import RuleRegistry
 def test_rule_registry_counts_match_task003_mapping() -> None:
     registry = RuleRegistry()
 
-    assert len(registry.by_decision(RuleDecision.AUTO_FIX)) == 28
-    assert len(registry.by_decision(RuleDecision.AUTO_CHECK)) == 19
+    assert len(registry.by_decision(RuleDecision.AUTO_FIX)) == 29
+    assert len(registry.by_decision(RuleDecision.AUTO_CHECK)) == 20
     assert len(registry.by_decision(RuleDecision.REPORT_ONLY)) == 10
     assert len(registry.by_decision(RuleDecision.OUT_OF_V1)) == 5
-    assert len(registry.all_metadata()) == 62
+    assert len(registry.all_metadata()) == 64
 
 
 def test_rule_registry_can_get_binding_and_register_handlers() -> None:

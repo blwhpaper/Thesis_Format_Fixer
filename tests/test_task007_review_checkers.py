@@ -7,8 +7,10 @@ from thesis_format_fixer.detectors.block_locator import locate_blocks
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.review.checkers import (
     body_english_punctuation_review,
+    english_book_title_marks_review,
     heading_structure_review,
     pagination_review,
+    reference_d_type_pages_review,
     reference_structure_review,
 )
 
@@ -175,3 +177,38 @@ def test_body_english_punctuation_review_skips_obvious_chinese_quote(tmp_path: P
 
     findings = body_english_punctuation_review(context, block_map)
     assert not any(item.rule_id == "FR-4.9-02" and item.decision.value in {"warn", "fail"} for item in findings)
+
+
+def test_english_title_marks_review_warns_on_english_line_with_chinese_book_marks(tmp_path: Path) -> None:
+    docx = tmp_path / "english-title-marks.docx"
+    _write_min_docx(
+        docx,
+        body=[
+            "Abstract",
+            "This dissertation cites 《A Brief History of Time》 in English context.",
+            "REFERENCES",
+            "[1] Smith J. Journal of Tests, 2025.",
+        ],
+    )
+    context = load_document(docx)
+    block_map = locate_blocks(context)
+
+    findings = english_book_title_marks_review(context, block_map)
+    assert any(item.rule_id == "FR-4.5-06" and item.decision.value == "warn" for item in findings)
+
+
+def test_reference_d_type_pages_review_warns_on_d_entry_with_pages(tmp_path: Path) -> None:
+    docx = tmp_path / "d-pages-review.docx"
+    _write_min_docx(
+        docx,
+        body=[
+            "REFERENCES",
+            "[1] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院, 2023, 98-100.",
+            "致谢",
+        ],
+    )
+    context = load_document(docx)
+    block_map = locate_blocks(context)
+
+    findings = reference_d_type_pages_review(context, block_map)
+    assert any(item.rule_id == "FR-4.11-07" and item.decision.value == "warn" for item in findings)

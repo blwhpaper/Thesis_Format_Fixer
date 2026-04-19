@@ -181,6 +181,19 @@ def _entry_level_checks(entry: ReferenceEntryParse, entry_index: int) -> list[Re
         _require_non_empty(findings, entry, entry_index, field_name="authors", display_name="作者", rule_id="FR-4.11-03")
         _require_non_empty(findings, entry, entry_index, field_name="title", display_name="题名", rule_id="FR-4.11-03")
         _require_non_empty(findings, entry, entry_index, field_name="year", display_name="年份", rule_id="FR-4.11-03")
+        if entry.pages:
+            findings.append(
+                ReferenceCheckFinding(
+                    rule_id="FR-4.11-07",
+                    severity="warning",
+                    scope="entry",
+                    entry_index=entry_index,
+                    message="D 类学位论文条目包含页码字段。",
+                    evidence={"check": "d_type_pages_present", "pages": entry.pages, "raw_text": entry.raw_text},
+                    suggested_action="删除 D 类条目中的页码字段。",
+                    is_auto_fixable=True,
+                )
+            )
         if not entry.degree_grantor:
             findings.append(
                 ReferenceCheckFinding(

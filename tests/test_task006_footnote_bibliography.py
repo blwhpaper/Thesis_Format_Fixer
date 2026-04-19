@@ -235,3 +235,32 @@ def test_reference_diagnostics_include_author_leading_fallback_counts(tmp_path: 
     assert diag["suspicious_reference_candidate_count"] == 0
     assert summary["reference_entry_total"] == 3
     assert summary["author_leading_reference_entry_count"] == 3
+
+
+def test_fix_removes_pages_from_d_type_reference_and_reports_auto_fix(tmp_path: Path) -> None:
+    input_docx = tmp_path / "d-pages-in.docx"
+    output_docx = tmp_path / "out" / "d-pages-out.fixed.docx"
+
+    _write_docx(
+        input_docx,
+        body_paragraphs=[
+            "REFERENCES",
+            "[1] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院, 2023, 98-100.",
+            "致谢",
+        ],
+    )
+
+    code = run_fix(input_docx, output_docx)
+    assert code == 0
+
+    document_root = _read_xml(output_docx, "word/document.xml")
+    output_lines = [
+        "".join((t.text or "") for t in p.findall(".//w:t", NS)).strip()
+        for p in document_root.findall(".//w:body/w:p", NS)
+    ]
+    d_line = next(line for line in output_lines if "[D]" in line)
+    assert "98-100" not in d_line
+
+    report = json.loads(output_docx.with_suffix(".report.json").read_text(encoding="utf-8"))
+    auto_fixed_ids = {item["rule_id"] for item in report["sections"]["auto_fixed"]}
+    assert "FR-4.11-07" in auto_fixed_ids

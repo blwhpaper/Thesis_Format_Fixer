@@ -95,3 +95,14 @@
 - FR-4.14-01、FR-4.14-02（页眉页脚基础样式）
 
 统一原因：需要先具备高置信度块定位、分节稳定遍历与复杂对象写回保护；在 V1 先做检测与报告，避免误改全篇结构。
+
+## 5. TASK-017 最小补丁映射（基于 v3 增补）
+
+| rule_id | rule_name | source_section | target_block | detection_method | fixability | risk_level | required_docx_capability | v1_decision |
+|---|---|---|---|---|---|---|---|---|
+| FR-4.5-06 | 英文内容禁用中文书名号《》 | 4.5 | english.text | 英文段落中扫描《》并过滤中文上下文 | no-fix | medium | 段落文本提取与字符集判断 | Auto Check |
+| FR-4.11-07 | D类参考文献不得包含页码 | 4.11 | bibliography.entries | 识别 `[D]` 条目后校验页码字段 | fixable | low | 参考文献条目识别与文本回写 | Auto Fix |
+
+补丁说明：
+- FR-4.5-06 属于项目补充决议，默认仅审查不自动改写。
+- FR-4.11-07 为项目决议覆盖口径，不宣称学校原文逐字条款；在 `fix` 链路按安全条件执行页码移除。

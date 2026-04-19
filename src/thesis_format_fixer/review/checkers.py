@@ -9,6 +9,7 @@ from zipfile import BadZipFile, ZipFile
 
 from thesis_format_fixer.contracts.review_types import ReviewDecision, ReviewEvidence, ReviewFinding
 from thesis_format_fixer.detectors.block_locator import BlockMap
+from thesis_format_fixer.detectors.reference_parser import parse_reference_entry
 from thesis_format_fixer.io.document_loader import DocumentContext
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -17,8 +18,11 @@ NS = {"w": W_NS}
 
 _HEADING_PATTERN = re.compile(r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?\s+")
 _REFERENCE_ENTRY_PATTERN = re.compile(r"^\[(\d+)\]\s+")
+_REFERENCE_D_TYPE_RE = re.compile(r"\[D(?:/[A-Z]{1,3})?\]", re.IGNORECASE)
+_REFERENCE_PAGE_RANGE_RE = re.compile(r"\d+\s*[-–—]\s*\d+")
 _CHINESE_PUNCTUATION_RE = re.compile(r"[，。：；（）【】！？、】【、]")
 _FULLWIDTH_RE = re.compile(r"[\u3000\uff01-\uff5e]")
+_CHINESE_TITLE_MARK_RE = re.compile(r"[《》]")
 _CHINESE_QUOTE_SEGMENT_RES = (
     re.compile(r"“[^”]{1,160}”"),
     re.compile(r"「[^」]{1,160}」"),
@@ -248,6 +252,133 @@ def reference_structure_review(context: DocumentContext, block_map: BlockMap) ->
         )
 
     return tuple(findings)
+
+
+def english_book_title_marks_review(context: DocumentContext, block_map: BlockMap) -> tuple[ReviewFinding, ...]:
+    _ = block_map
+    findings: list[ReviewFinding] = []
+    scanned = 0
+    for idx, line in enumerate(context.paragraphs):
+        text = line.strip()
+        if not text:
+            continue
+        if _CHINESE_TITLE_MARK_RE.search(text) is None:
+            continue
+        if _contains_cjk(text):
+            continue
+        if not re.search(r"[A-Za-z]", text):
+            continue
+        scanned += 1
+        findings.append(
+            ReviewFinding(
+                rule_id="FR-4.5-06",
+                block_id="english_context",
+                block_type="english.text",
+                target="english_book_title_marks",
+                decision=ReviewDecision.WARN,
+                confidence=0.92,
+                evidence=(
+                    ReviewEvidence(
+                        reason="english_context_contains_chinese_title_marks",
+                        snippet=text,
+                        paragraph_index=idx,
+                    ),
+                ),
+                suggestion="英文内容不应使用《》，该项默认高风险仅审查不自动修改。",
+            )
+        )
+
+    if findings:
+        return tuple(findings)
+
+    return (
+        ReviewFinding(
+            rule_id="FR-4.5-06",
+            block_id="english_context",
+            block_type="english.text",
+            target="english_book_title_marks",
+            severity="info",
+            decision=ReviewDecision.PASS,
+            confidence=0.78,
+            evidence=(ReviewEvidence(reason=f"no_english_title_mark_violation:scanned={scanned}"),),
+            suggestion="英文内容未发现《》书名号异常。",
+        ),
+    )
+
+
+def reference_d_type_pages_review(context: DocumentContext, block_map: BlockMap) -> tuple[ReviewFinding, ...]:
+    paragraphs = context.paragraphs
+    ref_block = block_map.blocks.get("references")
+    if ref_block is None or ref_block.start_paragraph is None:
+        return (
+            ReviewFinding(
+                rule_id="FR-4.11-07",
+                block_id="references",
+                block_type="bibliography.entries",
+                target="reference_d_type_pages",
+                decision=ReviewDecision.UNABLE_TO_JUDGE,
+                confidence=0.2,
+                evidence=(ReviewEvidence(reason="references_block_not_found"),),
+                suggestion="未定位到参考文献区块，D 类页码规则需人工复核。",
+            ),
+        )
+
+    entries = _collect_reference_entries(paragraphs, start=ref_block.start_paragraph + 1)
+    if not entries:
+        return (
+            ReviewFinding(
+                rule_id="FR-4.11-07",
+                block_id="references",
+                block_type="bibliography.entries",
+                target="reference_d_type_pages",
+                decision=ReviewDecision.UNABLE_TO_JUDGE,
+                confidence=0.36,
+                evidence=(ReviewEvidence(reason="reference_entries_not_found"),),
+                suggestion="未识别到参考文献条目，D 类页码规则需人工复核。",
+            ),
+        )
+
+    findings: list[ReviewFinding] = []
+    for para_index, entry_text in entries:
+        parsed = parse_reference_entry(entry_text)
+        if parsed.type_code != "D" and _REFERENCE_D_TYPE_RE.search(entry_text) is None:
+            continue
+        if parsed.pages or _REFERENCE_PAGE_RANGE_RE.search(entry_text):
+            findings.append(
+                ReviewFinding(
+                    rule_id="FR-4.11-07",
+                    block_id="references",
+                    block_type="bibliography.entries",
+                    target="reference_d_type_pages",
+                    decision=ReviewDecision.WARN,
+                    confidence=0.9 if parsed.pages else 0.82,
+                    evidence=(
+                        ReviewEvidence(
+                            reason="d_type_reference_contains_pages",
+                            snippet=entry_text,
+                            paragraph_index=para_index,
+                        ),
+                    ),
+                    suggestion="D 类参考文献不应包含页码，建议删除页码字段。",
+                )
+            )
+
+    if findings:
+        return tuple(findings)
+
+    return (
+        ReviewFinding(
+            rule_id="FR-4.11-07",
+            block_id="references",
+            block_type="bibliography.entries",
+            target="reference_d_type_pages",
+            severity="info",
+            decision=ReviewDecision.PASS,
+            confidence=0.8,
+            evidence=(ReviewEvidence(reason=f"d_type_reference_pages_check_ok:entries={len(entries)}"),),
+            suggestion="未发现 D 类参考文献页码异常。",
+        ),
+    )
 
 
 def pagination_review(context: DocumentContext, block_map: BlockMap) -> tuple[ReviewFinding, ...]:
@@ -581,3 +712,66 @@ def _strip_chinese_quote_segments(text: str) -> str:
     for pattern in _CHINESE_QUOTE_SEGMENT_RES:
         cleaned = pattern.sub(" ", cleaned)
     return cleaned
+
+
+def _collect_reference_entries(paragraphs: tuple[str, ...], *, start: int) -> list[tuple[int, str]]:
+    entries: list[tuple[int, str]] = []
+    current_start: int | None = None
+    current_lines: list[str] = []
+    blank_noise = 0
+
+    def _flush() -> None:
+        nonlocal current_start, current_lines
+        if current_start is None or not current_lines:
+            current_start = None
+            current_lines = []
+            return
+        merged = " ".join(line.strip() for line in current_lines if line.strip()).strip()
+        if merged:
+            entries.append((current_start, merged))
+        current_start = None
+        current_lines = []
+
+    for idx in range(start, len(paragraphs)):
+        text = paragraphs[idx].strip()
+        if not text:
+            if current_lines:
+                blank_noise += 1
+                if blank_noise > 1:
+                    break
+            continue
+        blank_noise = 0
+        if _REFERENCE_ENTRY_PATTERN.match(text):
+            _flush()
+            current_start = idx
+            current_lines = [text]
+            continue
+        if current_lines:
+            if _is_reference_stop_heading(text):
+                break
+            current_lines.append(text)
+            continue
+        if _is_reference_stop_heading(text):
+            break
+
+    _flush()
+    return entries
+
+
+def _is_reference_stop_heading(text: str) -> bool:
+    lowered = text.casefold()
+    return lowered in {
+        "致谢",
+        "acknowledgements",
+        "acknowledgments",
+        "appendix",
+        "appendices",
+        "附录",
+        "contents",
+        "目录",
+        "abstract",
+        "摘 要",
+        "摘要",
+        "references",
+        "参考文献",
+    }
