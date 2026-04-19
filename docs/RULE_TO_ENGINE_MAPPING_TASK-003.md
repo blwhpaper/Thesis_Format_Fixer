@@ -106,3 +106,25 @@
 补丁说明：
 - FR-4.5-06 属于项目补充决议，默认仅审查不自动改写。
 - FR-4.11-07 为项目决议覆盖口径，不宣称学校原文逐字条款；在 `fix` 链路按安全条件执行页码移除。
+
+## 6. TASK-018 参考文献 finding 下沉映射（审查增强）
+
+| finding_code | rule_id | checker_scope | notes |
+|---|---|---|---|
+| reference_type_marker_missing | FR-4.11-03 | entry | 缺少 `[J]/[M]/[D]/[EB/OL]` 等类型标识 |
+| reference_type_marker_invalid | FR-4.11-03 | entry | 类型标识不在允许集合 |
+| reference_type_carrier_invalid | FR-4.11-03 | entry | 载体标识非法或类型-载体组合非法 |
+| reference_journal_structure_invalid | FR-4.11-03 | entry | J 类字段结构不完整 |
+| reference_book_structure_invalid | FR-4.11-03 | entry | M/R 类字段结构不完整 |
+| reference_thesis_structure_invalid | FR-4.11-03 | entry | D 类字段结构不完整 |
+| reference_eb_ol_structure_invalid | FR-4.11-03 | entry | 电子文献结构不完整（年份/定位信息/载体） |
+| reference_language_order_invalid | FR-4.11-04 | collection | 未满足“英文在前、中文在后” |
+| reference_english_count_insufficient | FR-4.11-04 | collection | 英文文献数量少于 5 |
+| reference_punctuation_invalid | FR-4.11-03 | entry | 参考文献标点异常 |
+| reference_field_order_invalid | FR-4.11-03 | entry | 关键字段顺序异常 |
+| reference_english_contains_cn_book_title_marks | FR-4.5-06 | entry | 英文条目出现 `《》` |
+| reference_d_thesis_has_page_range | FR-4.11-07 | entry | D 类条目出现页码区间 |
+
+说明：
+- TASK-018 仅做 checker + finding 下沉，不在此任务引入高风险自动重写。
+- `is_auto_fixable` 统一为 `false`，`fix/batch-fix` 仅报告，不自动改写参考文献内容。

@@ -4,6 +4,8 @@
 
 Current stage: **TASK-016 rule-source recalibration (v3 freeze baseline)**.
 
+Reference-review stage: **TASK-018 bibliography finding granularity uplift**.
+
 ## Project Purpose
 
 - Check and fix DOCX formatting issues for English graduation theses.
@@ -75,6 +77,18 @@ Output convention:
 - `rules/sources/10.1论文封皮.pdf`
 - `rules/sources/8. 毕业论文正文写作格式要求.docx`
 - `rules/sources/太院教字[2021]03号太原学院毕业论文（设计）管理办法（终稿）.pdf`
+
+## Bibliography Review Capabilities (TASK-018)
+
+- Fine-grained findings for bibliography type marker legality and carrier legality.
+- Type-specific structure checks for `[J]`, `[M]/[R]`, `[D]`, `[EB/OL]` and similar combinations.
+- Collection-level checks for:
+  - English entries must appear before Chinese entries.
+  - English bibliography count must be at least 5.
+- Additional frozen checks:
+  - English entry must not contain `《》`.
+  - `[D]` thesis entry must not contain page range.
+- Output findings include stable `finding_code` and context fields (`rule_code`, `block_id`, `reference_index`, `reference_text`, `reason` / `expected_pattern`) for downstream report/review queue consumption.
 
 ## Repository Layout
 

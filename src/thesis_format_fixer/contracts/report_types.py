@@ -39,10 +39,17 @@ class RuleExecutionRecord:
 @dataclass(frozen=True, slots=True)
 class ReferenceCheckFinding:
     rule_id: str
-    severity: str
-    scope: str
-    entry_index: int | None
-    message: str
+    rule_code: str = ""
+    finding_code: str = ""
+    severity: str = "warning"
+    block_id: str = "references"
+    reference_index: int | None = None
+    reference_text: str = ""
+    reason: str = ""
+    expected_pattern: str = ""
+    scope: str = "entry"
+    entry_index: int | None = None
+    message: str = ""
     evidence: dict[str, Any] = field(default_factory=dict)
     suggested_action: str = ""
     is_auto_fixable: bool = False
@@ -74,10 +81,17 @@ class ReferencePrioritySummary:
 class ReferenceReviewQueueItem:
     finding_index: int
     rule_id: str
-    severity: str
-    scope: str
-    entry_index: int | None
-    message: str
+    rule_code: str = ""
+    finding_code: str = ""
+    severity: str = "warning"
+    block_id: str = "references"
+    reference_index: int | None = None
+    reference_text: str = ""
+    reason: str = ""
+    expected_pattern: str = ""
+    scope: str = "entry"
+    entry_index: int | None = None
+    message: str = ""
     evidence: dict[str, Any] = field(default_factory=dict)
     suggested_action: str = ""
     is_auto_fixable: bool = False

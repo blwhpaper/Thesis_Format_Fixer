@@ -43,102 +43,94 @@ def _write_min_docx(path: Path, *, body: list[str]) -> None:
         archive.writestr("word/document.xml", document_xml)
 
 
-def test_reference_checker_journal_entry_clean_or_weak_only() -> None:
+def test_reference_checker_journal_entry_clean() -> None:
     entries = _parse_entries(
         [
-            "[1] Smith J. Test Framework[J]. Journal of Testing, 2024, 12(1): 10-20.",
-            "[2] Brown A. QA Methods[J]. Journal of QA, 2025, 5(2): 21-30.",
-            "[3] Lee C. Software Metrics[J]. Software Journal, 2024, 3(1): 31-40.",
-            "[4] Green D. Evaluation Study[J]. Testing Review, 2023, 6(4): 12-19.",
-            "[5] White E. Validation Pipeline[J]. Journal of Validation, 2026, 2(1): 44-53.",
+            "[1] Smith J. Test Framework[J]. Journal of Testing, 2024(1): 10-20.",
+            "[2] Brown A. QA Methods[J]. Journal of QA, 2025(2): 21-30.",
+            "[3] Lee C. Software Metrics[J]. Software Journal, 2024(3): 31-40.",
+            "[4] Green D. Evaluation Study[J]. Testing Review, 2023(4): 12-19.",
+            "[5] White E. Validation Pipeline[J]. Journal of Validation, 2026(1): 44-53.",
         ]
     )
-    result = run_reference_checks(entries, current_year=2026)
 
-    assert result.entry_findings == ()
-    assert result.error_count == 0
-
-
-def test_reference_checker_journal_missing_pages_yields_entry_finding() -> None:
-    entries = _parse_entries(["[1] Smith J. Missing pages[J]. Journal of Tests, 2024, 12(1)."])
-    result = run_reference_checks(entries, current_year=2026)
-
-    assert any(item.scope == "entry" and item.evidence.get("check") == "pages_missing" for item in result.findings)
+    result = run_reference_checks(entries)
+    assert result.findings == ()
 
 
-def test_reference_checker_thesis_missing_year_yields_entry_finding() -> None:
-    entries = _parse_entries(["[1] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院."])
-    result = run_reference_checks(entries, current_year=2026)
-
-    assert any(item.scope == "entry" and item.evidence.get("check") == "year_missing" for item in result.findings)
-
-
-def test_reference_checker_d_type_with_pages_yields_entry_finding() -> None:
-    entries = _parse_entries(["[1] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院, 2023, 98-100."])
-    result = run_reference_checks(entries, current_year=2026)
-
-    assert any(item.scope == "entry" and item.rule_id == "FR-4.11-07" for item in result.findings)
-
-
-def test_reference_checker_electronic_missing_url_yields_entry_finding() -> None:
-    entries = _parse_entries(["[1] Lee C. Online source[EB/OL]. Database of Studies, 2024."])
-    result = run_reference_checks(entries, current_year=2026)
-
-    assert any(
-        item.scope == "entry" and item.evidence.get("check") == "electronic_url_missing" for item in result.findings
-    )
-
-
-def test_reference_checker_english_count_under_five_yields_collection_finding() -> None:
+def test_reference_checker_emits_type_and_structure_finding_codes() -> None:
     entries = _parse_entries(
         [
-            "[1] Smith J. J1[J]. Journal A, 2024, 1(1): 1-2.",
-            "[2] Brown A. J2[J]. Journal B, 2024, 1(1): 1-2.",
-            "[3] 王强. 中文条目[J]. 测试学报, 2023, 2(1): 3-4.",
+            "[1] No marker entry.",
+            "[2] Bad type[W]. payload.",
+            "[3] Bad carrier[EB/XX]. source, 2024. https://example.org/x",
+            "[4] Smith J. Missing pages[J]. Journal A, 2024(1).",
+            "[5] Wang Q. Thesis with pages[D]. Taiyuan: TYU, 2023, 1-9.",
+            "[6] Wang Q. Thesis missing year[D]. Taiyuan: TYU.",
+            "[7] E source[EB/OL]. only year, 2024.",
+            "[8] Book no pages[M]. Beijing: Press, 2020.",
         ]
     )
-    result = run_reference_checks(entries, current_year=2026)
 
-    assert any(item.scope == "collection" and item.rule_id == "FR-4.11-04" and "少于 5" in item.message for item in result.findings)
+    result = run_reference_checks(entries)
+    codes = {item.finding_code for item in result.findings}
+
+    assert "reference_type_marker_missing" in codes
+    assert "reference_type_marker_invalid" in codes
+    assert "reference_type_carrier_invalid" in codes
+    assert "reference_journal_structure_invalid" in codes
+    assert "reference_book_structure_invalid" in codes
+    assert "reference_thesis_structure_invalid" in codes
+    assert "reference_eb_ol_structure_invalid" in codes
+    assert "reference_d_thesis_has_page_range" in codes
 
 
-def test_reference_checker_language_order_violation_yields_collection_finding() -> None:
+def test_reference_checker_emits_language_and_count_finding_codes() -> None:
     entries = _parse_entries(
         [
-            "[1] Smith J. J1[J]. Journal A, 2024, 1(1): 1-2.",
-            "[2] Brown A. J2[J]. Journal B, 2024, 1(1): 1-2.",
-            "[3] White E. J3[J]. Journal C, 2024, 1(1): 1-2.",
-            "[4] 王强. 中文条目[J]. 测试学报, 2023, 2(1): 3-4.",
-            "[5] Lee C. J4[J]. Journal D, 2024, 1(1): 1-2.",
-            "[6] Green D. J5[J]. Journal E, 2024, 1(1): 1-2.",
+            "[1] Smith J. J1[J]. Journal A, 2024(1): 1-2.",
+            "[2] Wang Q. 中文条目[J]. 测试学报, 2023(2): 3-4.",
+            "[3] Brown A. J2[J]. Journal B, 2024(1): 1-2.",
         ]
     )
-    result = run_reference_checks(entries, current_year=2026)
 
-    assert any(
-        item.scope == "collection"
-        and item.rule_id == "FR-4.11-04"
-        and "英文在前、中文在后" in item.message
-        for item in result.findings
-    )
+    result = run_reference_checks(entries)
+    codes = {item.finding_code for item in result.findings}
+
+    assert "reference_english_count_insufficient" in codes
+    assert "reference_language_order_invalid" in codes
 
 
-def test_reference_checker_many_unknown_or_low_confidence_yields_collection_finding() -> None:
+def test_reference_checker_emits_marks_punctuation_and_field_order_codes() -> None:
     entries = _parse_entries(
         [
-            "random text A",
-            "random text B",
-            "random text C",
-            "[4] random non-standard entry",
-            "[5] Smith J. Stable entry[J]. Journal A, 2025, 1(1): 1-3.",
-            "[6] Brown A. Stable entry[J]. Journal B, 2025, 1(1): 4-6.",
+            "[1] Smith J. Cites 《English Title》[J]. Journal A, 2024(1): 1-2.",
+            "[2] Smith J. Bad punctuation[J]. Journal A,, 2024(1): 1-2",
+            "[3] Smith J. Order issue 2024[J]. Journal A(1): 1-2.",
         ]
     )
-    result = run_reference_checks(entries, current_year=2026)
 
-    assert any(
-        item.scope == "collection" and item.evidence.get("low_confidence_count", 0) >= 3 for item in result.findings
-    )
+    result = run_reference_checks(entries)
+    codes = {item.finding_code for item in result.findings}
+
+    assert "reference_english_contains_cn_book_title_marks" in codes
+    assert "reference_punctuation_invalid" in codes
+    assert "reference_field_order_invalid" in codes
+
+
+def test_reference_checker_findings_expose_required_fields() -> None:
+    entries = _parse_entries(["[1] random text"])
+    result = run_reference_checks(entries)
+
+    finding = result.findings[0]
+    assert finding.rule_code
+    assert finding.finding_code
+    assert finding.severity
+    assert finding.block_id
+    assert finding.reference_index is not None
+    assert finding.reference_text
+    assert finding.reason or finding.expected_pattern
+    assert finding.is_auto_fixable is False
 
 
 def test_runner_report_exposes_reference_checker_statistics_and_samples(tmp_path: Path) -> None:
@@ -148,7 +140,7 @@ def test_runner_report_exposes_reference_checker_statistics_and_samples(tmp_path
         input_docx,
         body=[
             "REFERENCES",
-            "[1] Smith J. A practical testing framework[J]. Journal of Testing, 2024, 12(3): 10-20.",
+            "[1] Smith J. A practical testing framework[J]. Journal of Testing, 2024(3): 10-20.",
             "[2] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院.",
             "[3] random non-standard entry",
             "致谢",
@@ -168,6 +160,12 @@ def test_runner_report_exposes_reference_checker_statistics_and_samples(tmp_path
     assert "reference_english_count" in diag
     assert "reference_chinese_count" in diag
     assert "reference_unknown_count" in diag
+
+    sample = diag["reference_entry_findings_sample"]
+    if sample:
+        assert "finding_code" in sample[0]
+        assert "rule_code" in sample[0]
+        assert "reference_text" in sample[0]
 
     assert "reference_check_finding_count" in summary
     assert "reference_check_error_count" in summary

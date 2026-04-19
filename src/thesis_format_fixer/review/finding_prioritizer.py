@@ -28,7 +28,14 @@ def build_reference_review_queue(
             ReferenceReviewQueueItem(
                 finding_index=idx,
                 rule_id=finding.rule_id,
+                rule_code=finding.rule_code,
+                finding_code=finding.finding_code,
                 severity=finding.severity,
+                block_id=finding.block_id,
+                reference_index=finding.reference_index,
+                reference_text=finding.reference_text,
+                reason=finding.reason,
+                expected_pattern=finding.expected_pattern,
                 scope=finding.scope,
                 entry_index=finding.entry_index,
                 message=finding.message,
@@ -69,6 +76,17 @@ def build_reference_review_queue(
 
 
 def _classify_priority(finding: ReferenceCheckFinding) -> tuple[str, str]:
+    if finding.finding_code in {
+        "reference_type_marker_missing",
+        "reference_type_marker_invalid",
+        "reference_type_carrier_invalid",
+        "reference_journal_structure_invalid",
+        "reference_book_structure_invalid",
+        "reference_thesis_structure_invalid",
+        "reference_eb_ol_structure_invalid",
+        "reference_d_thesis_has_page_range",
+    }:
+        return "P0", "参考文献结构或类型标识异常，建议优先修正。"
     if _is_blocking_grouping_issue(finding):
         return "P0", "英文文献数量或中英文分组规则疑似不达标，需先处理。"
     if _is_blocking_structure_failure(finding):
@@ -83,6 +101,8 @@ def _classify_priority(finding: ReferenceCheckFinding) -> tuple[str, str]:
 
 
 def _is_blocking_grouping_issue(finding: ReferenceCheckFinding) -> bool:
+    if finding.finding_code in {"reference_english_count_insufficient", "reference_language_order_invalid"}:
+        return True
     if finding.rule_id != "FR-4.11-04":
         return False
     if finding.scope != "collection":
@@ -96,6 +116,16 @@ def _is_blocking_grouping_issue(finding: ReferenceCheckFinding) -> bool:
 
 
 def _is_blocking_structure_failure(finding: ReferenceCheckFinding) -> bool:
+    if finding.finding_code in {
+        "reference_type_marker_missing",
+        "reference_type_marker_invalid",
+        "reference_type_carrier_invalid",
+        "reference_journal_structure_invalid",
+        "reference_book_structure_invalid",
+        "reference_thesis_structure_invalid",
+        "reference_eb_ol_structure_invalid",
+    }:
+        return True
     evidence = finding.evidence
     check = str(evidence.get("check", ""))
     if check in {"entry_type_unknown", "parse_confidence_low"}:
