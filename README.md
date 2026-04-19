@@ -2,7 +2,7 @@
 
 `thesis-format-fixer` is a Python CLI project for checking and fixing **English graduation thesis DOCX formatting** against a rulebook.
 
-Current stage: **TASK-016 rule-source recalibration (v3 freeze baseline)**.
+Current stage: **TASK-019 rule-source alignment and rulebook uplift (v3 freeze refresh)**.
 
 Reference-review stage: **TASK-018 bibliography finding granularity uplift**.
 
@@ -77,6 +77,13 @@ Output convention:
 - `rules/sources/10.1论文封皮.pdf`
 - `rules/sources/8. 毕业论文正文写作格式要求.docx`
 - `rules/sources/太院教字[2021]03号太原学院毕业论文（设计）管理办法（终稿）.pdf`
+
+TASK-019 note:
+
+- The school management regulation PDF is now part of the formal rule-source set.
+- `FORMAT_RULEBOOK_v3` now explicitly freezes two additional constraints as **B-class check-only rules**:
+  - No Chinese book-title marks `《》` in English contexts.
+  - No page ranges for D-type references (`[D]`, `[D/OL]`).
 
 ## Bibliography Review Capabilities (TASK-018)
 
