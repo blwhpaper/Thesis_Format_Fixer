@@ -167,3 +167,22 @@ def test_review_pipeline_does_not_modify_input_docx(tmp_path: Path) -> None:
 
     after = docx.read_bytes()
     assert after == before
+
+
+def test_review_mode_basic_reports_body_english_punctuation_findings(tmp_path: Path) -> None:
+    docx = tmp_path / "body-punctuation.docx"
+    _write_min_docx(
+        docx,
+        body=[
+            "CONTENTS",
+            "1 Intro",
+            "This line has fullwidth space　inside.",
+            "REFERENCES",
+            "[1] Smith J. Journal of Tests, 2025.",
+        ],
+    )
+
+    payload = _build_single_payload(docx, review_mode="basic")
+    review = payload["sections"]["intelligent_review"]
+
+    assert any(item["rule_id"] == "FR-4.9-02" for item in review["findings"])

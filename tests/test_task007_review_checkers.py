@@ -6,6 +6,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from thesis_format_fixer.detectors.block_locator import locate_blocks
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.review.checkers import (
+    body_english_punctuation_review,
     heading_structure_review,
     pagination_review,
     reference_structure_review,
@@ -115,3 +116,62 @@ def test_pagination_review_minimal_sample(tmp_path: Path) -> None:
 
     assert findings
     assert any(item.rule_id == "FR-4.15-03" for item in findings)
+
+
+def test_body_english_punctuation_review_hits_chinese_punctuation_in_body(tmp_path: Path) -> None:
+    docx = tmp_path / "body-punct-hit.docx"
+    _write_min_docx(
+        docx,
+        body=[
+            "CONTENTS",
+            "1 Intro",
+            "This sentence has wrong punctuation， in body.",
+            "REFERENCES",
+            "[1] Smith J. Journal of Tests, 2025.",
+        ],
+    )
+    context = load_document(docx)
+    block_map = locate_blocks(context)
+
+    findings = body_english_punctuation_review(context, block_map)
+    assert any(item.rule_id == "FR-4.9-02" and item.decision.value == "warn" for item in findings)
+
+
+def test_body_english_punctuation_review_does_not_scan_non_body_sections(tmp_path: Path) -> None:
+    docx = tmp_path / "body-punct-non-body.docx"
+    _write_min_docx(
+        docx,
+        body=[
+            "Abstract",
+            "This abstract line has chinese punct， but should be ignored.",
+            "CONTENTS",
+            "1 Intro",
+            "This body line is clean.",
+            "REFERENCES",
+            "[1] Smith J. Journal of Tests, 2025.",
+        ],
+    )
+    context = load_document(docx)
+    block_map = locate_blocks(context)
+
+    findings = body_english_punctuation_review(context, block_map)
+    assert not any(item.rule_id == "FR-4.9-02" and item.decision.value in {"warn", "fail"} for item in findings)
+
+
+def test_body_english_punctuation_review_skips_obvious_chinese_quote(tmp_path: Path) -> None:
+    docx = tmp_path / "body-punct-quote-skip.docx"
+    _write_min_docx(
+        docx,
+        body=[
+            "CONTENTS",
+            "1 Intro",
+            "The source keeps Chinese quote: “这是中文引文，含中文标点。”",
+            "REFERENCES",
+            "[1] Smith J. Journal of Tests, 2025.",
+        ],
+    )
+    context = load_document(docx)
+    block_map = locate_blocks(context)
+
+    findings = body_english_punctuation_review(context, block_map)
+    assert not any(item.rule_id == "FR-4.9-02" and item.decision.value in {"warn", "fail"} for item in findings)

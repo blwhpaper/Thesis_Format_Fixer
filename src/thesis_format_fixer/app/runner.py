@@ -70,13 +70,18 @@ def _normalize_review_targets(raw: str | tuple[str, ...] | list[str] | None) -> 
 
 
 def _review_finding_to_payload(item: ReviewFinding) -> dict[str, Any]:
+    first_evidence = item.evidence[0] if item.evidence else None
     return {
         "rule_id": item.rule_id,
+        "severity": item.severity,
         "block_id": item.block_id,
         "block_type": item.block_type,
         "target": item.target,
         "decision": item.decision.value,
         "confidence": item.confidence,
+        "reason": first_evidence.reason if first_evidence is not None else "",
+        "snippet": first_evidence.snippet if first_evidence is not None else "",
+        "paragraph_index": first_evidence.paragraph_index if first_evidence is not None else None,
         "evidence": [asdict(evidence) for evidence in item.evidence],
         "suggestion": item.suggestion,
         "auto_fix_allowed": item.auto_fix_allowed,
@@ -292,7 +297,7 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
                 lines.append(
                     "- "
                     + f"{item['rule_id']} [{item['decision']}] "
-                    + f"source={item['source']} target={item['target']} "
+                    + f"severity={item['severity']} source={item['source']} target={item['target']} "
                     + f"confidence={item['confidence']:.2f}"
                 )
         else:

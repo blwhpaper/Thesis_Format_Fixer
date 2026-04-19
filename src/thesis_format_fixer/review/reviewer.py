@@ -13,7 +13,12 @@ from thesis_format_fixer.contracts.review_types import (
 )
 from thesis_format_fixer.detectors.block_locator import BlockMap
 from thesis_format_fixer.io.document_loader import DocumentContext
-from thesis_format_fixer.review.checkers import heading_structure_review, pagination_review, reference_structure_review
+from thesis_format_fixer.review.checkers import (
+    body_english_punctuation_review,
+    heading_structure_review,
+    pagination_review,
+    reference_structure_review,
+)
 from thesis_format_fixer.review.model_adapter import (
     DisabledModelAdapter,
     LocalModelAdapter,
@@ -21,7 +26,7 @@ from thesis_format_fixer.review.model_adapter import (
     PlaceholderLocalModelAdapter,
 )
 
-REVIEW_TARGETS = ("headings", "references", "pagination")
+REVIEW_TARGETS = ("headings", "references", "pagination", "body_english_punctuation")
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +40,7 @@ _TARGET_TO_TASK = {
     "headings": "heading_structure_review",
     "references": "reference_structure_review",
     "pagination": "pagination_review",
+    "body_english_punctuation": "body_english_punctuation_review",
 }
 
 
@@ -118,6 +124,8 @@ def _run_rule_engine_target(target: str, context: DocumentContext, block_map: Bl
         return reference_structure_review(context, block_map)
     if target == "pagination":
         return pagination_review(context, block_map)
+    if target == "body_english_punctuation":
+        return body_english_punctuation_review(context, block_map)
     return ()
 
 
@@ -157,6 +165,8 @@ def _task_rule_ids(task: str) -> list[str]:
         return ["FR-4.11-03", "FR-4.11-04"]
     if task == "pagination_review":
         return ["FR-4.15-01", "FR-4.15-03"]
+    if task == "body_english_punctuation_review":
+        return ["FR-4.9-02"]
     return []
 
 

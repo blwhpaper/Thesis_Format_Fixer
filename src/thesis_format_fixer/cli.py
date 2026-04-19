@@ -18,8 +18,8 @@ def _add_review_options(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--review-target",
-        default="headings,references,pagination",
-        help="Comma separated review targets: headings,references,pagination",
+        default="headings,references,pagination,body_english_punctuation",
+        help="Comma separated review targets: headings,references,pagination,body_english_punctuation",
     )
     parser.add_argument(
         "--review-local-model",

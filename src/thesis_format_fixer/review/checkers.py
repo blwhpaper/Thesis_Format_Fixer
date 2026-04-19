@@ -17,6 +17,20 @@ NS = {"w": W_NS}
 
 _HEADING_PATTERN = re.compile(r"^\s*(\d+)(?:\.(\d+))?(?:\.(\d+))?\s+")
 _REFERENCE_ENTRY_PATTERN = re.compile(r"^\[(\d+)\]\s+")
+_CHINESE_PUNCTUATION_RE = re.compile(r"[，。：；（）【】！？、】【、]")
+_FULLWIDTH_RE = re.compile(r"[\u3000\uff01-\uff5e]")
+_CHINESE_QUOTE_SEGMENT_RES = (
+    re.compile(r"“[^”]{1,160}”"),
+    re.compile(r"「[^」]{1,160}」"),
+    re.compile(r"『[^』]{1,160}』"),
+    re.compile(r"《[^》]{1,160}》"),
+)
+_OUTER_CHINESE_QUOTES = {
+    "“": "”",
+    "「": "」",
+    "『": "』",
+    "《": "》",
+}
 
 
 def heading_structure_review(context: DocumentContext, block_map: BlockMap) -> tuple[ReviewFinding, ...]:
@@ -340,6 +354,133 @@ def pagination_review(context: DocumentContext, block_map: BlockMap) -> tuple[Re
     return tuple(findings)
 
 
+def body_english_punctuation_review(context: DocumentContext, block_map: BlockMap) -> tuple[ReviewFinding, ...]:
+    paragraphs = context.paragraphs
+    body_block = block_map.blocks.get("body")
+    if (
+        body_block is None
+        or body_block.start_paragraph is None
+        or body_block.end_paragraph is None
+        or body_block.start_paragraph > body_block.end_paragraph
+    ):
+        return (
+            ReviewFinding(
+                rule_id="FR-4.9-02",
+                block_id="body",
+                block_type="body.paragraphs",
+                target="body_english_punctuation",
+                severity="info",
+                decision=ReviewDecision.UNABLE_TO_JUDGE,
+                confidence=0.25,
+                evidence=(ReviewEvidence(reason="body_block_not_found_or_invalid"),),
+                suggestion="未稳定定位正文区块，正文英文标点需人工抽查。",
+            ),
+        )
+
+    findings: list[ReviewFinding] = []
+    scanned_count = 0
+    skipped_count = 0
+    first_skipped: tuple[int, str, str] | None = None
+    start = max(0, body_block.start_paragraph)
+    end = min(len(paragraphs) - 1, body_block.end_paragraph)
+
+    for idx in range(start, end + 1):
+        text = paragraphs[idx].strip()
+        if not text:
+            continue
+
+        block_id, block_type = _body_review_block_for_line(text)
+
+        if _should_skip_chinese_quote_or_cjk(text):
+            skipped_count += 1
+            if first_skipped is None:
+                first_skipped = (idx, text, "quoted_or_cjk_dominated_content_skipped")
+            continue
+
+        cleaned = _strip_chinese_quote_segments(text)
+        if not cleaned.strip():
+            skipped_count += 1
+            if first_skipped is None:
+                first_skipped = (idx, text, "quoted_content_only_skipped")
+            continue
+
+        scanned_count += 1
+
+        punct_hit = _CHINESE_PUNCTUATION_RE.search(cleaned)
+        if punct_hit is not None:
+            findings.append(
+                ReviewFinding(
+                    rule_id="FR-4.9-02",
+                    block_id=block_id,
+                    block_type=block_type,
+                    target="body_english_punctuation",
+                    severity="warning",
+                    decision=ReviewDecision.WARN,
+                    confidence=0.93,
+                    evidence=(
+                        ReviewEvidence(
+                            reason=f"chinese_punctuation_detected:{punct_hit.group(0)}",
+                            snippet=text,
+                            paragraph_index=idx,
+                        ),
+                    ),
+                    suggestion="正文英文段落建议统一使用英文半角标点，避免中文标点混入。",
+                )
+            )
+            continue
+
+        fullwidth_hit = _FULLWIDTH_RE.search(cleaned)
+        if fullwidth_hit is not None:
+            findings.append(
+                ReviewFinding(
+                    rule_id="FR-4.9-02",
+                    block_id=block_id,
+                    block_type=block_type,
+                    target="body_english_punctuation",
+                    severity="warning",
+                    decision=ReviewDecision.WARN,
+                    confidence=0.95,
+                    evidence=(
+                        ReviewEvidence(
+                            reason=f"fullwidth_character_detected:{fullwidth_hit.group(0)}",
+                            snippet=text,
+                            paragraph_index=idx,
+                        ),
+                    ),
+                    suggestion="检测到全角字符/全角空格，正文英文建议改为半角字符。",
+                )
+            )
+
+    if findings:
+        return tuple(findings)
+
+    evidence: list[ReviewEvidence] = [
+        ReviewEvidence(reason=f"no_body_punctuation_violation_detected:scanned={scanned_count},skipped={skipped_count}")
+    ]
+    if first_skipped is not None:
+        evidence.append(
+            ReviewEvidence(
+                reason=first_skipped[2],
+                snippet=first_skipped[1],
+                paragraph_index=first_skipped[0],
+            )
+        )
+
+    return (
+        ReviewFinding(
+            rule_id="FR-4.9-02",
+            block_id="body",
+            block_type="body.paragraphs",
+            target="body_english_punctuation",
+            severity="info",
+            decision=ReviewDecision.PASS,
+            confidence=0.86,
+            evidence=tuple(evidence),
+            suggestion="正文英文标点未见明显异常。",
+        ),
+    )
+
+
 def _detect_heading_sequence_issue(
     candidates: list[tuple[int, str, tuple[int, ...]]],
 ) -> tuple[int, str, str] | None:
@@ -414,3 +555,29 @@ def _extract_text_from_xml(raw: bytes) -> str:
     for node in root.findall(".//w:t", NS):
         chunks.append(node.text or "")
     return "".join(chunks).strip()
+
+
+def _body_review_block_for_line(text: str) -> tuple[str, str]:
+    if _HEADING_PATTERN.match(text):
+        return "body_headings", "body.headings"
+    return "body_paragraphs", "body.paragraphs"
+
+
+def _should_skip_chinese_quote_or_cjk(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    outer_quote = _OUTER_CHINESE_QUOTES.get(stripped[0])
+    if outer_quote is not None and stripped.endswith(outer_quote):
+        return True
+    cjk_count = sum(1 for ch in stripped if "\u4e00" <= ch <= "\u9fff")
+    if cjk_count / max(len(stripped), 1) >= 0.35:
+        return True
+    return False
+
+
+def _strip_chinese_quote_segments(text: str) -> str:
+    cleaned = text
+    for pattern in _CHINESE_QUOTE_SEGMENT_RES:
+        cleaned = pattern.sub(" ", cleaned)
+    return cleaned
