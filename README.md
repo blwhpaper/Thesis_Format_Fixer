@@ -64,7 +64,7 @@ Launch GUI:
 python -m thesis_format_fixer.gui
 ```
 
-Minimal workflow:
+Minimal workflow (single file):
 
 1. Select one `.docx` file.
 2. Choose mode: `check` or `fix`.
@@ -72,6 +72,19 @@ Minimal workflow:
 4. Click `Execute`.
 5. Read result summary in GUI.
 6. Click `Open Output Dir` to get generated reports/docx.
+
+Batch workflow:
+
+1. Choose mode: `batch-fix`.
+2. Select input directory (GUI scans `.docx` recursively).
+3. Select output directory.
+4. Click `Execute`.
+5. Read per-file status (`exit_code`, input, output) and run summary in GUI:
+   - `total_files`
+   - `succeeded`
+   - `failed`
+   - `output_dir`
+6. Click `Open Output Dir` to inspect generated files and `batch_summary.json`.
 
 Output convention:
 

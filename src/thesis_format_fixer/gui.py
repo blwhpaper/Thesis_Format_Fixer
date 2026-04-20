@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import traceback
@@ -9,7 +10,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-from thesis_format_fixer.app.runner import run_check_with_details, run_fix_with_details
+from thesis_format_fixer.app.runner import run_batch_fix, run_check_with_details, run_fix_with_details
 
 try:
     import tkinter as tk
@@ -24,6 +25,7 @@ else:
 
 
 RunnerWithDetails = Callable[..., tuple[int, dict[str, Any], Path | None, Path | None]]
+BatchRunner = Callable[..., int]
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,6 +37,21 @@ class GuiExecutionResult:
     exit_code: int
     generated_files: tuple[Path, ...] = ()
     payload: dict[str, Any] = field(default_factory=dict)
+    error_text: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GuiBatchExecutionResult:
+    input_dir: Path
+    output_dir: Path
+    recursive: bool
+    success: bool
+    exit_code: int
+    total_files: int
+    succeeded: int
+    failed: int
+    items: tuple[dict[str, Any], ...] = ()
+    summary_payload: dict[str, Any] = field(default_factory=dict)
     error_text: str | None = None
 
 
@@ -139,6 +156,100 @@ def format_gui_result(result: GuiExecutionResult) -> str:
     return "\n".join(lines) + "\n"
 
 
+def execute_gui_batch_task(
+    *,
+    input_dir: Path,
+    output_dir: Path,
+    recursive: bool = True,
+    batch_runner: BatchRunner = run_batch_fix,
+) -> GuiBatchExecutionResult:
+    if not input_dir.exists() or not input_dir.is_dir():
+        raise ValueError(f"输入目录不存在或不可用: {input_dir}")
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary_json = output_dir / "batch_summary.json"
+
+    try:
+        code = batch_runner(input_dir, output_dir, recursive=recursive)
+    except Exception as exc:
+        return GuiBatchExecutionResult(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            recursive=recursive,
+            success=False,
+            exit_code=1,
+            total_files=0,
+            succeeded=0,
+            failed=0,
+            items=(),
+            summary_payload={},
+            error_text=f"{exc}\n{traceback.format_exc()}",
+        )
+
+    payload: dict[str, Any] = {}
+    parse_error: str | None = None
+    if summary_json.exists():
+        try:
+            payload = json.loads(summary_json.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            parse_error = f"批处理摘要解析失败: {exc}"
+    else:
+        parse_error = f"缺少批处理摘要文件: {summary_json}"
+
+    items_raw = payload.get("items", []) if isinstance(payload, dict) else []
+    items = tuple(item for item in items_raw if isinstance(item, dict))
+    total_files = int(payload.get("total_files", len(items))) if isinstance(payload, dict) else len(items)
+    succeeded = int(payload.get("succeeded", 0)) if isinstance(payload, dict) else 0
+    failed = int(payload.get("failed", 0)) if isinstance(payload, dict) else 0
+    success = (code == 0) and parse_error is None
+    error_text = parse_error
+    if code != 0:
+        error_text = (error_text + "\n" if error_text else "") + f"Runner exit code: {code}"
+
+    return GuiBatchExecutionResult(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        recursive=recursive,
+        success=success,
+        exit_code=code,
+        total_files=total_files,
+        succeeded=succeeded,
+        failed=failed,
+        items=items,
+        summary_payload=payload,
+        error_text=error_text,
+    )
+
+
+def format_gui_batch_result(result: GuiBatchExecutionResult) -> str:
+    lines = [
+        "mode: batch-fix",
+        f"input_dir: {result.input_dir}",
+        f"output_dir: {result.output_dir}",
+        f"recursive: {result.recursive}",
+        f"status: {'success' if result.success else 'failure'} (exit_code={result.exit_code})",
+        "summary:",
+        f"- total_files: {result.total_files}",
+        f"- succeeded: {result.succeeded}",
+        f"- failed: {result.failed}",
+        "per_file_status:",
+    ]
+    if result.items:
+        for item in result.items:
+            lines.append(
+                "- "
+                + f"exit_code={item.get('exit_code')} "
+                + f"input={item.get('input_file')} "
+                + f"output={item.get('output_docx')}"
+            )
+    else:
+        lines.append("- (none)")
+
+    if result.error_text:
+        lines.extend(["error:", result.error_text.strip()])
+    return "\n".join(lines) + "\n"
+
+
 def open_directory(path: Path) -> None:
     if not path.exists():
         raise FileNotFoundError(f"目录不存在: {path}")
@@ -164,6 +275,7 @@ class ThesisFormatFixerGUI:
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
         self.mode_var = tk.StringVar(value="check")
+        self.input_label_var = tk.StringVar(value="Input .docx")
         self.status_var = tk.StringVar(value="Ready")
         self._last_output_dir: Path | None = None
 
@@ -174,7 +286,7 @@ class ThesisFormatFixerGUI:
         root.columnconfigure(1, weight=1)
         root.rowconfigure(5, weight=1)
 
-        tk.Label(root, text="Input .docx").grid(row=0, column=0, padx=8, pady=8, sticky="w")
+        tk.Label(root, textvariable=self.input_label_var).grid(row=0, column=0, padx=8, pady=8, sticky="w")
         tk.Entry(root, textvariable=self.input_var).grid(row=0, column=1, padx=8, pady=8, sticky="ew")
         tk.Button(root, text="Browse", command=self._pick_input).grid(row=0, column=2, padx=8, pady=8)
 
@@ -185,8 +297,27 @@ class ThesisFormatFixerGUI:
         tk.Label(root, text="Mode").grid(row=2, column=0, padx=8, pady=8, sticky="w")
         mode_frame = tk.Frame(root)
         mode_frame.grid(row=2, column=1, padx=8, pady=8, sticky="w")
-        tk.Radiobutton(mode_frame, text="check", variable=self.mode_var, value="check").pack(side="left")
-        tk.Radiobutton(mode_frame, text="fix", variable=self.mode_var, value="fix").pack(side="left")
+        tk.Radiobutton(
+            mode_frame,
+            text="check",
+            variable=self.mode_var,
+            value="check",
+            command=self._on_mode_changed,
+        ).pack(side="left")
+        tk.Radiobutton(
+            mode_frame,
+            text="fix",
+            variable=self.mode_var,
+            value="fix",
+            command=self._on_mode_changed,
+        ).pack(side="left")
+        tk.Radiobutton(
+            mode_frame,
+            text="batch-fix",
+            variable=self.mode_var,
+            value="batch-fix",
+            command=self._on_mode_changed,
+        ).pack(side="left")
 
         self.run_button = tk.Button(root, text="Execute", command=self._execute)
         self.run_button.grid(row=3, column=1, padx=8, pady=8, sticky="w")
@@ -203,10 +334,13 @@ class ThesisFormatFixerGUI:
 
     def _pick_input(self) -> None:
         assert filedialog is not None
-        path = filedialog.askopenfilename(
-            title="Select DOCX",
-            filetypes=[("Word Document", "*.docx"), ("All Files", "*.*")],
-        )
+        if self.mode_var.get() == "batch-fix":
+            path = filedialog.askdirectory(title="Select Input Directory")
+        else:
+            path = filedialog.askopenfilename(
+                title="Select DOCX",
+                filetypes=[("Word Document", "*.docx"), ("All Files", "*.*")],
+            )
         if path:
             self.input_var.set(path)
 
@@ -216,46 +350,72 @@ class ThesisFormatFixerGUI:
         if path:
             self.output_var.set(path)
 
-    def _validate_before_run(self) -> tuple[Path, Path] | None:
+    def _on_mode_changed(self) -> None:
+        mode = self.mode_var.get()
+        if mode == "batch-fix":
+            self.input_label_var.set("Input Dir")
+        else:
+            self.input_label_var.set("Input .docx")
+
+    def _validate_before_run(self) -> tuple[Path, Path, str] | None:
         input_value = self.input_var.get().strip()
         output_value = self.output_var.get().strip()
+        mode = self.mode_var.get().strip().lower()
         if not input_value:
-            self.status_var.set("Please select input .docx file.")
+            self.status_var.set("Please select input path.")
             return None
         if not output_value:
             self.status_var.set("Please select output directory.")
             return None
         input_path = Path(input_value)
         output_dir = Path(output_value)
+        if mode == "batch-fix":
+            if not input_path.exists() or not input_path.is_dir():
+                self.status_var.set("Input path must be an existing directory for batch-fix")
+                return None
+            return input_path, output_dir, mode
         if input_path.suffix.lower() != ".docx":
             self.status_var.set("Input file must be .docx")
             return None
-        return input_path, output_dir
+        return input_path, output_dir, mode
 
     def _execute(self) -> None:
         validated = self._validate_before_run()
         if validated is None:
             return
 
-        input_path, output_dir = validated
+        input_path, output_dir, mode = validated
         self.run_button.config(state="disabled")
         self.status_var.set("Running...")
         self.root.update_idletasks()
 
-        result = execute_gui_task(
-            input_file=input_path,
-            output_dir=output_dir,
-            mode=self.mode_var.get(),
-        )
+        if mode == "batch-fix":
+            batch_result = execute_gui_batch_task(
+                input_dir=input_path,
+                output_dir=output_dir,
+                recursive=True,
+            )
+            output_text = format_gui_batch_result(batch_result)
+            run_success = batch_result.success
+            run_error = batch_result.error_text
+        else:
+            single_result = execute_gui_task(
+                input_file=input_path,
+                output_dir=output_dir,
+                mode=mode,
+            )
+            output_text = format_gui_result(single_result)
+            run_success = single_result.success
+            run_error = single_result.error_text
 
         self.result_text.delete("1.0", "end")
-        self.result_text.insert("1.0", format_gui_result(result))
+        self.result_text.insert("1.0", output_text)
         self._last_output_dir = output_dir
         self.open_button.config(state="normal" if output_dir.exists() else "disabled")
-        self.status_var.set("Completed" if result.success else "Failed")
+        self.status_var.set("Completed" if run_success else "Failed")
 
-        if result.error_text and messagebox is not None:
-            messagebox.showerror("Execution Error", result.error_text)
+        if run_error and messagebox is not None:
+            messagebox.showerror("Execution Error", run_error)
         self.run_button.config(state="normal")
 
     def _open_output_dir(self) -> None:
