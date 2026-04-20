@@ -736,6 +736,60 @@ def _merge_rule_updates(records: list[RuleExecutionRecord], updates: dict[str, A
 
 
 
+def run_check_with_details(
+    input_file: Path,
+    *,
+    report_json_out: Path | None = None,
+    report_md_out: Path | None = None,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+    model_adapter: LocalModelAdapter | None = None,
+) -> tuple[int, dict[str, Any], Path | None, Path | None]:
+    if not input_file.exists():
+        raise FileNotFoundError(f"输入文件不存在: {input_file}")
+
+    return _run_single(
+        input_file,
+        output_docx=None,
+        report_json_out=report_json_out,
+        report_md_out=report_md_out,
+        review_mode=review_mode,
+        review_targets=review_targets,
+        review_local_model=review_local_model,
+        model_adapter=model_adapter,
+    )
+
+
+def run_fix_with_details(
+    input_file: Path,
+    output_file: Path,
+    *,
+    report_json_out: Path | None = None,
+    report_md_out: Path | None = None,
+    review_mode: str = "off",
+    review_targets: str | tuple[str, ...] | list[str] | None = None,
+    review_local_model: str | None = None,
+    model_adapter: LocalModelAdapter | None = None,
+) -> tuple[int, dict[str, Any], Path | None, Path | None]:
+    if not input_file.exists():
+        raise FileNotFoundError(f"输入文件不存在: {input_file}")
+    if output_file.is_dir():
+        raise IsADirectoryError(f"--out 不能是目录: {output_file}")
+
+    # V1 safety boundary: no content/style write-back, only passthrough copy + report.
+    return _run_single(
+        input_file,
+        output_docx=output_file,
+        report_json_out=report_json_out,
+        report_md_out=report_md_out,
+        review_mode=review_mode,
+        review_targets=review_targets,
+        review_local_model=review_local_model,
+        model_adapter=model_adapter,
+    )
+
+
 def run_check(
     input_file: Path,
     *,
@@ -746,23 +800,22 @@ def run_check(
     review_local_model: str | None = None,
     model_adapter: LocalModelAdapter | None = None,
 ) -> int:
-    if not input_file.exists():
-        print(f"输入文件不存在: {input_file}")
+    try:
+        code, payload, _, _ = run_check_with_details(
+            input_file,
+            report_json_out=report_json_out,
+            report_md_out=report_md_out,
+            review_mode=review_mode,
+            review_targets=review_targets,
+            review_local_model=review_local_model,
+            model_adapter=model_adapter,
+        )
+    except FileNotFoundError as exc:
+        print(str(exc))
         return 2
 
-    code, payload, _, _ = _run_single(
-        input_file,
-        output_docx=None,
-        report_json_out=report_json_out,
-        report_md_out=report_md_out,
-        review_mode=review_mode,
-        review_targets=review_targets,
-        review_local_model=review_local_model,
-        model_adapter=model_adapter,
-    )
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return code
-
 
 
 def run_fix(
@@ -776,24 +829,21 @@ def run_fix(
     review_local_model: str | None = None,
     model_adapter: LocalModelAdapter | None = None,
 ) -> int:
-    if not input_file.exists():
-        print(f"输入文件不存在: {input_file}")
-        return 2
-    if output_file.is_dir():
-        print(f"--out 不能是目录: {output_file}")
+    try:
+        code, payload, report_json, report_md = run_fix_with_details(
+            input_file,
+            output_file,
+            report_json_out=report_json_out,
+            report_md_out=report_md_out,
+            review_mode=review_mode,
+            review_targets=review_targets,
+            review_local_model=review_local_model,
+            model_adapter=model_adapter,
+        )
+    except (FileNotFoundError, IsADirectoryError) as exc:
+        print(str(exc))
         return 2
 
-    # V1 safety boundary: no content/style write-back, only passthrough copy + report.
-    code, payload, report_json, report_md = _run_single(
-        input_file,
-        output_docx=output_file,
-        report_json_out=report_json_out,
-        report_md_out=report_md_out,
-        review_mode=review_mode,
-        review_targets=review_targets,
-        review_local_model=review_local_model,
-        model_adapter=model_adapter,
-    )
     print(
         json.dumps(
             {

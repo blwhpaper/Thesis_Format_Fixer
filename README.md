@@ -23,7 +23,6 @@ Reference-review stage: **TASK-018 bibliography finding granularity uplift**.
 - DOCX formatting deep repair logic (still guarded by V1 scope).
 - Cover-page reconstruction.
 - Page numbering / section / footnote reflow.
-- GUI.
 - Any beyond current TASK-007 minimal review scope.
 
 ## Install
@@ -56,6 +55,23 @@ thesis-format-fixer fix samples/input/demo.docx \
 thesis-format-fixer batch-fix samples/input \
   --out-dir samples/output/batch
 ```
+
+## GUI (Minimal)
+
+Launch GUI:
+
+```bash
+python -m thesis_format_fixer.gui
+```
+
+Minimal workflow:
+
+1. Select one `.docx` file.
+2. Choose mode: `check` or `fix`.
+3. Select output directory.
+4. Click `Execute`.
+5. Read result summary in GUI.
+6. Click `Open Output Dir` to get generated reports/docx.
 
 Output convention:
 
