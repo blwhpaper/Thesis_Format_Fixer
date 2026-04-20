@@ -91,3 +91,39 @@ def test_cli_batch_fix_non_recursive(tmp_path: Path) -> None:
 
     assert (output_dir / "top.fixed.docx").exists()
     assert not (output_dir / "sub" / "nested.fixed.docx").exists()
+
+
+def test_run_batch_fix_empty_input_dir_returns_2_and_writes_summary(tmp_path: Path) -> None:
+    input_dir = tmp_path / "in"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = tmp_path / "out"
+
+    code = run_batch_fix(input_dir, output_dir, recursive=True)
+    assert code == 2
+
+    summary_json = output_dir / "batch_summary.json"
+    assert summary_json.exists()
+    summary = json.loads(summary_json.read_text(encoding="utf-8"))
+    assert summary["total_files"] == 0
+    assert summary["warning"] == "输入目录中未找到 .docx 文件"
+
+
+def test_run_batch_fix_output_dir_not_writable_like_file_path(tmp_path: Path) -> None:
+    input_dir = tmp_path / "in"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    _create_fake_docx(input_dir / "a.docx")
+
+    output_dir = tmp_path / "occupied"
+    output_dir.write_text("not-a-dir", encoding="utf-8")
+
+    code = run_batch_fix(input_dir, output_dir, recursive=True)
+    assert code == 2
+
+
+def test_run_fix_rejects_non_docx_output_path(tmp_path: Path) -> None:
+    input_file = tmp_path / "input.docx"
+    _create_fake_docx(input_file)
+    output_file = tmp_path / "out" / "input.fixed.txt"
+
+    code = run_fix(input_file, output_file)
+    assert code == 2

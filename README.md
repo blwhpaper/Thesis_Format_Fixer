@@ -1,31 +1,10 @@
 # thesis-format-fixer
 
-`thesis-format-fixer` is a Python CLI project for checking and fixing **English graduation thesis DOCX formatting** against a rulebook.
+`thesis-format-fixer` 是一个针对英文毕业论文 `.docx` 的格式检查/修复工具。
 
-Current stage: **TASK-019 rule-source alignment and rulebook uplift (v3 freeze refresh)**.
+当前阶段：**TASK-022 可交付版收口与验收**。
 
-Reference-review stage: **TASK-018 bibliography finding granularity uplift**.
-
-## Project Purpose
-
-- Check and fix DOCX formatting issues for English graduation theses.
-- Focus on **format compliance only**.
-- Do **not** evaluate content quality, argument quality, grammar quality, or academic merit.
-
-## Rule Boundary (A/B/C)
-
-- A. **Machine-checkable structural/style rules**: targeted scope for this project.
-- B. **Partially machine-checkable rules**: may require manual confirmation or reviewer override in future tasks.
-- C. **Content-quality and academic judgment rules**: out of scope.
-
-## Not Supported (Current)
-
-- DOCX formatting deep repair logic (still guarded by V1 scope).
-- Cover-page reconstruction.
-- Page numbering / section / footnote reflow.
-- Any beyond current TASK-007 minimal review scope.
-
-## Install
+## 1. 安装
 
 ```bash
 python -m venv .venv
@@ -34,103 +13,113 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## CLI Examples
+## 2. CLI 用法
 
 ```bash
-# Single-file check (optional report output)
+# 查看帮助
+thesis-format-fixer --help
+
+# 单文件检查（建议显式输出报告路径）
 thesis-format-fixer check samples/input/demo.docx \
   --report-json samples/output/demo.check.report.json \
   --report-md samples/output/demo.check.report.md
 
-# Single-file check + V2 review (rule-engine only)
-thesis-format-fixer check samples/input/demo.docx \
-  --review-mode basic \
-  --review-target headings,references,pagination
-
-# Single-file fix mode (V1 keeps safe passthrough copy + report)
+# 单文件修复（安全输出到新文件，不覆盖原文件）
 thesis-format-fixer fix samples/input/demo.docx \
   --out samples/output/demo.fixed.docx
 
-# Batch fix mode (recursive by default)
+# 批量修复（默认递归）
 thesis-format-fixer batch-fix samples/input \
   --out-dir samples/output/batch
+
+# 批量修复（仅当前目录）
+thesis-format-fixer batch-fix samples/input \
+  --out-dir samples/output/batch \
+  --no-recursive
 ```
 
-## GUI (Minimal)
-
-Launch GUI:
+## 3. GUI 启动方式
 
 ```bash
 python -m thesis_format_fixer.gui
 ```
 
-Minimal workflow (single file):
+GUI 模式支持：`check` / `fix` / `batch-fix`。
 
-1. Select one `.docx` file.
-2. Choose mode: `check` or `fix`.
-3. Select output directory.
-4. Click `Execute`.
-5. Read result summary in GUI.
-6. Click `Open Output Dir` to get generated reports/docx.
+## 4. 单文件处理流程（GUI/CLI 一致走 runner/report）
 
-Batch workflow:
+1. 选择输入 `.docx`。
+2. 选择输出目录（GUI）或 `--out`（CLI fix）。
+3. 运行 `check` 或 `fix`。
+4. 在输出目录查看生成产物（报告或修复文件+报告）。
 
-1. Choose mode: `batch-fix`.
-2. Select input directory (GUI scans `.docx` recursively).
-3. Select output directory.
-4. Click `Execute`.
-5. Read per-file status (`exit_code`, input, output) and run summary in GUI:
-   - `total_files`
-   - `succeeded`
-   - `failed`
-   - `output_dir`
-6. Click `Open Output Dir` to inspect generated files and `batch_summary.json`.
+## 5. 批量处理流程
 
-Output convention:
+1. 指定输入目录（默认递归扫描 `.docx`）。
+2. 指定输出目录。
+3. 执行 `batch-fix`。
+4. 查看批处理汇总：`batch_summary.json`、`batch_summary.md`。
+5. 查看每个文件的 `exit_code` 与产物路径。
 
-- Single `fix`:
-  - fixed docx: `*.fixed.docx`
-  - report json: `*.report.json` (default: same path stem as output docx)
-  - report md: `*.report.md` (default: same path stem as output docx)
-- Batch `batch-fix`:
-  - each input docx gets independent `*.fixed.docx` + `*.report.json` + `*.report.md`
-  - keeps relative directory structure from input dir
-  - batch summary:
-    - `batch_summary.json`
-    - `batch_summary.md`
+## 6. 输出文件说明
 
-## Rule Sources in Repository
+### 单文件 `check`
+
+- `*.check.report.json`
+- `*.check.report.md`
+
+### 单文件 `fix`
+
+- `*.fixed.docx`
+- `*.report.json`
+- `*.report.md`
+
+### 批量 `batch-fix`
+
+- 每个输入文件对应：`*.fixed.docx` + `*.report.json` + `*.report.md`
+- 保持输入目录的相对结构
+- 汇总文件：
+  - `batch_summary.json`
+  - `batch_summary.md`
+
+## 7. 当前支持范围（A/B/C 边界内）
+
+- A 类低风险自动修复（已冻结白名单）
+- B 类自动检查、报告提示
+- C 类保持人工复核，不自动改写
+- GUI 与 CLI 共用 `runner` 与 `report_builder` 主链路
+
+规则基线与映射参考：
+
+- `rules/FORMAT_RULEBOOK_v3.md`
+- `docs/RULE_TO_ENGINE_MAPPING_TASK-003.md`
+- `docs/V1_OUT_OF_SCOPE_TASK-003.md`
+
+## 8. 当前未支持范围
+
+以下仍为 out-of-scope，不应宣称已支持：
+
+- 封皮模板重建与精细布局重建
+- 自动目录域重建
+- 正文起始分节与页码系统重构
+- 脚注按页重编
+- 装订线版面重排
+- 参考文献内容级语义纠错/复杂重排
+
+## 9. 常见问题与失败提示
+
+- 输入文件不存在：会明确提示 `输入文件不存在`。
+- 输入不是 `.docx`：会明确提示 `输入文件必须是 .docx`。
+- 批量目录为空：会产出 `batch_summary`，并提示未找到 `.docx`。
+- 输出目录不可写：会明确提示 `输出目录不可写/不可创建`。
+- 批量中单个文件失败：不会中断全部任务，会在汇总中显示该文件 `exit_code` 与错误信息。
+- GUI 运行失败：显示可理解错误信息，不向普通用户直出 Python traceback。
+
+## 10. 规则来源
 
 - `rules/FORMAT_RULEBOOK_v3.md`
 - `rules/FORMAT_RULEBOOK_v2.md`
-- `rules/sources/10.1论文封皮.pdf`
+- `rules/sources/FORMAT_RULEBOOK_v1.md`
 - `rules/sources/8. 毕业论文正文写作格式要求.docx`
+- `rules/sources/10.1论文封皮.pdf`
 - `rules/sources/太院教字[2021]03号太原学院毕业论文（设计）管理办法（终稿）.pdf`
-
-TASK-019 note:
-
-- The school management regulation PDF is now part of the formal rule-source set.
-- `FORMAT_RULEBOOK_v3` now explicitly freezes two additional constraints as **B-class check-only rules**:
-  - No Chinese book-title marks `《》` in English contexts.
-  - No page ranges for D-type references (`[D]`, `[D/OL]`).
-
-## Bibliography Review Capabilities (TASK-018)
-
-- Fine-grained findings for bibliography type marker legality and carrier legality.
-- Type-specific structure checks for `[J]`, `[M]/[R]`, `[D]`, `[EB/OL]` and similar combinations.
-- Collection-level checks for:
-  - English entries must appear before Chinese entries.
-  - English bibliography count must be at least 5.
-- Additional frozen checks:
-  - English entry must not contain `《》`.
-  - `[D]` thesis entry must not contain page range.
-- Output findings include stable `finding_code` and context fields (`rule_code`, `block_id`, `reference_index`, `reference_text`, `reason` / `expected_pattern`) for downstream report/review queue consumption.
-
-## Repository Layout
-
-- `src/` source-layout Python package
-- `rules/` rulebook and source documents
-- `docs/` architecture and planning notes
-- `tests/` smoke tests
-- `scripts/` local bootstrap/demo scripts
-- `samples/` sample IO/report directories

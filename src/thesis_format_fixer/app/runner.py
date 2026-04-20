@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -53,6 +54,32 @@ def _derive_report_paths(output_docx: Path) -> tuple[Path, Path]:
     report_json = output_docx.with_suffix(".report.json")
     report_md = output_docx.with_suffix(".report.md")
     return report_json, report_md
+
+
+def _ensure_input_docx_file(input_file: Path) -> None:
+    if not input_file.exists():
+        raise FileNotFoundError(f"输入文件不存在: {input_file}")
+    if input_file.is_dir():
+        raise IsADirectoryError(f"输入路径不能是目录: {input_file}")
+    if input_file.suffix.lower() != ".docx":
+        raise ValueError(f"输入文件必须是 .docx: {input_file}")
+
+
+def _ensure_output_directory_writable(output_dir: Path) -> None:
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise PermissionError(f"输出目录不可创建: {output_dir}") from exc
+
+    probe_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=output_dir, prefix=".write_probe_", suffix=".tmp", delete=False) as handle:
+            probe_path = Path(handle.name)
+    except OSError as exc:
+        raise PermissionError(f"输出目录不可写: {output_dir}") from exc
+    finally:
+        if probe_path is not None and probe_path.exists():
+            probe_path.unlink(missing_ok=True)
 
 
 def _normalize_review_targets(raw: str | tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
@@ -746,8 +773,7 @@ def run_check_with_details(
     review_local_model: str | None = None,
     model_adapter: LocalModelAdapter | None = None,
 ) -> tuple[int, dict[str, Any], Path | None, Path | None]:
-    if not input_file.exists():
-        raise FileNotFoundError(f"输入文件不存在: {input_file}")
+    _ensure_input_docx_file(input_file)
 
     return _run_single(
         input_file,
@@ -772,10 +798,12 @@ def run_fix_with_details(
     review_local_model: str | None = None,
     model_adapter: LocalModelAdapter | None = None,
 ) -> tuple[int, dict[str, Any], Path | None, Path | None]:
-    if not input_file.exists():
-        raise FileNotFoundError(f"输入文件不存在: {input_file}")
+    _ensure_input_docx_file(input_file)
     if output_file.is_dir():
         raise IsADirectoryError(f"--out 不能是目录: {output_file}")
+    if output_file.suffix.lower() != ".docx":
+        raise ValueError(f"--out 必须是 .docx 文件路径: {output_file}")
+    _ensure_output_directory_writable(output_file.parent)
 
     # V1 safety boundary: no content/style write-back, only passthrough copy + report.
     return _run_single(
@@ -810,7 +838,7 @@ def run_check(
             review_local_model=review_local_model,
             model_adapter=model_adapter,
         )
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, IsADirectoryError, ValueError) as exc:
         print(str(exc))
         return 2
 
@@ -840,7 +868,7 @@ def run_fix(
             review_local_model=review_local_model,
             model_adapter=model_adapter,
         )
-    except (FileNotFoundError, IsADirectoryError) as exc:
+    except (FileNotFoundError, IsADirectoryError, ValueError, PermissionError) as exc:
         print(str(exc))
         return 2
 
@@ -873,7 +901,11 @@ def run_batch_fix(
         print(f"输入目录不存在或不可用: {input_dir}")
         return 2
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _ensure_output_directory_writable(output_dir)
+    except PermissionError as exc:
+        print(str(exc))
+        return 2
     files = _find_docx_files(input_dir, recursive=recursive)
 
     started_at = _utc_now_iso()
@@ -914,9 +946,14 @@ def run_batch_fix(
                 "report_json": str(report_json),
                 "report_md": str(report_md),
                 "exit_code": code,
+                "error": payload.get("error"),
                 "summary": payload.get("summary", {}),
             }
         )
+
+    warning: str | None = None
+    if not files:
+        warning = "输入目录中未找到 .docx 文件"
 
     summary_payload = {
         "schema_version": "task-005-batch-summary-v1",
@@ -929,6 +966,7 @@ def run_batch_fix(
         "total_files": len(files),
         "succeeded": succeeded,
         "failed": failed,
+        "warning": warning,
         "items": items,
     }
 
@@ -952,6 +990,8 @@ def run_batch_fix(
     ]
     if not items:
         md_lines.append("- (no .docx files found)")
+        md_lines.append("")
+        md_lines.append("- warning: 输入目录中未找到 .docx 文件")
     else:
         for item in items:
             md_lines.append(
@@ -961,7 +1001,11 @@ def run_batch_fix(
                 + f"output={item['output_docx']} "
                 + f"report={item['report_json']}"
             )
+            if item.get("error"):
+                md_lines.append(f"  error={item['error']}")
     summary_md.write_text("\n".join(md_lines) + "\n", encoding="utf-8")
 
     print(json.dumps(summary_payload, ensure_ascii=False, indent=2))
+    if warning is not None:
+        return 2
     return 0 if failed == 0 else 1

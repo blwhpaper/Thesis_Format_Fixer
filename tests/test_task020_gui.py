@@ -74,6 +74,7 @@ def test_execute_gui_task_fix_failure_path(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert result.error_text is not None
     assert "boom:" in result.error_text
+    assert "Traceback" not in result.error_text
 
 
 def test_execute_gui_batch_task_and_format_result(tmp_path: Path) -> None:
@@ -134,5 +135,17 @@ def test_execute_gui_batch_task_and_format_result(tmp_path: Path) -> None:
     assert "total_files: 2" in formatted
     assert "succeeded: 1" in formatted
     assert "failed: 1" in formatted
+    assert "batch_summary_json:" in formatted
     assert "exit_code=0" in formatted
     assert "exit_code=1" in formatted
+
+
+def test_execute_gui_task_raises_for_missing_input_file(tmp_path: Path) -> None:
+    output_dir = tmp_path / "out"
+    missing_docx = tmp_path / "missing.docx"
+    try:
+        gui.execute_gui_task(input_file=missing_docx, output_dir=output_dir, mode="check")
+    except FileNotFoundError as exc:
+        assert "输入文件不存在" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("expected FileNotFoundError")

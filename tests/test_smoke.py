@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from thesis_format_fixer.app.runner import run_check
+
 
 def test_package_import() -> None:
     import thesis_format_fixer  # noqa: F401
@@ -25,3 +27,9 @@ def test_cli_help_runs() -> None:
     )
     assert result.returncode == 0
     assert "thesis-format-fixer" in result.stdout
+
+
+def test_run_check_rejects_non_docx_input(tmp_path: Path) -> None:
+    txt_file = tmp_path / "demo.txt"
+    txt_file.write_text("hello", encoding="utf-8")
+    assert run_check(txt_file) == 2

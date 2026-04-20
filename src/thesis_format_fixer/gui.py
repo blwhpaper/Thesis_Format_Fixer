@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-import traceback
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -74,6 +74,10 @@ def execute_gui_task(
     normalized_mode = mode.strip().lower()
     if normalized_mode not in {"check", "fix"}:
         raise ValueError(f"Unsupported mode: {mode}")
+    if not input_file.exists():
+        raise FileNotFoundError(f"输入文件不存在: {input_file}")
+    if input_file.is_dir():
+        raise ValueError(f"输入路径不能是目录: {input_file}")
     if input_file.suffix.lower() != ".docx":
         raise ValueError("输入文件必须是 .docx")
 
@@ -107,7 +111,7 @@ def execute_gui_task(
             exit_code=1,
             generated_files=tuple(path for path in generated_files if path.exists()),
             payload={},
-            error_text=f"{exc}\n{traceback.format_exc()}",
+            error_text=str(exc),
         )
 
     existing_files = tuple(path for path in generated_files if path.exists())
@@ -136,6 +140,7 @@ def format_gui_result(result: GuiExecutionResult) -> str:
         lines.extend(f"- {path}" for path in result.generated_files)
     else:
         lines.append("- (none)")
+    lines.append(f"result_location_hint: {result.output_dir}")
 
     if summary:
         lines.extend(
@@ -183,7 +188,7 @@ def execute_gui_batch_task(
             failed=0,
             items=(),
             summary_payload={},
-            error_text=f"{exc}\n{traceback.format_exc()}",
+            error_text=str(exc),
         )
 
     payload: dict[str, Any] = {}
@@ -222,12 +227,15 @@ def execute_gui_batch_task(
 
 
 def format_gui_batch_result(result: GuiBatchExecutionResult) -> str:
+    warning = result.summary_payload.get("warning") if isinstance(result.summary_payload, dict) else None
     lines = [
         "mode: batch-fix",
         f"input_dir: {result.input_dir}",
         f"output_dir: {result.output_dir}",
         f"recursive: {result.recursive}",
         f"status: {'success' if result.success else 'failure'} (exit_code={result.exit_code})",
+        f"batch_summary_json: {result.output_dir / 'batch_summary.json'}",
+        f"batch_summary_md: {result.output_dir / 'batch_summary.md'}",
         "summary:",
         f"- total_files: {result.total_files}",
         f"- succeeded: {result.succeeded}",
@@ -244,6 +252,9 @@ def format_gui_batch_result(result: GuiBatchExecutionResult) -> str:
             )
     else:
         lines.append("- (none)")
+
+    if warning:
+        lines.append(f"warning: {warning}")
 
     if result.error_text:
         lines.extend(["error:", result.error_text.strip()])
@@ -354,8 +365,32 @@ class ThesisFormatFixerGUI:
         mode = self.mode_var.get()
         if mode == "batch-fix":
             self.input_label_var.set("Input Dir")
+            self.status_var.set("Batch mode: choose an input directory containing .docx files.")
         else:
             self.input_label_var.set("Input .docx")
+            self.status_var.set("Single-file mode: choose one .docx file.")
+
+    def _ensure_output_dir_writable(self, output_dir: Path) -> tuple[bool, str | None]:
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return False, f"Output directory cannot be created: {output_dir}"
+
+        probe: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                dir=output_dir,
+                prefix=".gui_write_probe_",
+                suffix=".tmp",
+                delete=False,
+            ) as handle:
+                probe = Path(handle.name)
+        except OSError:
+            return False, f"Output directory is not writable: {output_dir}"
+        finally:
+            if probe is not None and probe.exists():
+                probe.unlink(missing_ok=True)
+        return True, None
 
     def _validate_before_run(self) -> tuple[Path, Path, str] | None:
         input_value = self.input_var.get().strip()
@@ -369,11 +404,21 @@ class ThesisFormatFixerGUI:
             return None
         input_path = Path(input_value)
         output_dir = Path(output_value)
+        output_ok, output_error = self._ensure_output_dir_writable(output_dir)
+        if not output_ok:
+            self.status_var.set(output_error or "Output directory is not writable.")
+            return None
         if mode == "batch-fix":
             if not input_path.exists() or not input_path.is_dir():
                 self.status_var.set("Input path must be an existing directory for batch-fix")
                 return None
             return input_path, output_dir, mode
+        if not input_path.exists():
+            self.status_var.set("Input file does not exist.")
+            return None
+        if input_path.is_dir():
+            self.status_var.set("Input path must be a .docx file.")
+            return None
         if input_path.suffix.lower() != ".docx":
             self.status_var.set("Input file must be .docx")
             return None
@@ -412,7 +457,10 @@ class ThesisFormatFixerGUI:
         self.result_text.insert("1.0", output_text)
         self._last_output_dir = output_dir
         self.open_button.config(state="normal" if output_dir.exists() else "disabled")
-        self.status_var.set("Completed" if run_success else "Failed")
+        if run_success:
+            self.status_var.set(f"Completed. Output saved in: {output_dir}")
+        else:
+            self.status_var.set("Failed. See details below.")
 
         if run_error and messagebox is not None:
             messagebox.showerror("Execution Error", run_error)
