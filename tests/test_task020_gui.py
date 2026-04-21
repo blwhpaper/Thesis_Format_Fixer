@@ -95,9 +95,10 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
     assert result.error_text is None
     formatted = gui.format_gui_result(result)
     assert "GUI 用户版结果面板" in formatted
-    assert "用户版中文摘要" in formatted
-    assert "参考文献相关提醒数量" in formatted
-    assert "用户版摘要文件" in formatted
+    assert "概览结果" in formatted
+    assert "分类结果" in formatted
+    assert "参考文献相关提醒" in formatted
+    assert "打开摘要文件" in formatted
     assert "技术字段（次级展示）" in formatted
 
 
@@ -128,7 +129,12 @@ def test_format_gui_result_fix_shows_three_artifact_exits(tmp_path: Path) -> Non
                 "block_low_confidence_count": 0,
             },
             "user_summary": {
+                "processing_type": "fix",
+                "processing_label": "修复",
                 "overall_status": "已完成修复",
+                "category_summaries": [
+                    {"category_title": "已自动修复 / 已自动处理", "count": 1, "description": "系统已完成安全范围内的自动处理。"}
+                ],
                 "technical_summary": {
                     "auto_fix_rule_count": 1,
                     "detected_not_auto_modified_count": 0,
@@ -147,10 +153,11 @@ def test_format_gui_result_fix_shows_three_artifact_exits(tmp_path: Path) -> Non
         },
     )
     formatted = gui.format_gui_result(result)
-    assert "文件出口" in formatted
+    assert "查看与导出" in formatted
     assert "修复后 docx" in formatted
     assert "技术版报告（Markdown）" in formatted
-    assert "用户版摘要文件" in formatted
+    assert "打开摘要文件" in formatted
+    assert "打开输出目录" in formatted
 
 
 def test_execute_gui_task_fix_failure_path(tmp_path: Path) -> None:

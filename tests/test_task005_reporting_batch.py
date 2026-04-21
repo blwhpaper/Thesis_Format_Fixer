@@ -23,7 +23,7 @@ def test_run_fix_writes_docx_and_reports(tmp_path: Path) -> None:
 
     report_json = output_file.with_suffix(".report.json")
     report_md = output_file.with_suffix(".report.md")
-    user_summary_md = output_file.with_suffix(".user_summary.md")
+    user_summary_md = output_file.parent / "fix.user_summary.md"
     assert report_json.exists()
     assert report_md.exists()
     assert user_summary_md.exists()
@@ -44,6 +44,27 @@ def test_run_fix_writes_docx_and_reports(tmp_path: Path) -> None:
         "reference_review",
         "manual_review_required",
     }
+    assert payload["artifacts"]["user_summary_md"] == str(user_summary_md)
+
+
+def test_run_check_writes_stable_user_summary_name(tmp_path: Path) -> None:
+    input_file = tmp_path / "input.docx"
+    report_dir = tmp_path / "out"
+    report_json = report_dir / "input.check.report.json"
+    report_md = report_dir / "input.check.report.md"
+    _create_fake_docx(input_file)
+
+    from thesis_format_fixer.app.runner import run_check_with_details
+
+    code, payload, _, _ = run_check_with_details(
+        input_file,
+        report_json_out=report_json,
+        report_md_out=report_md,
+    )
+
+    assert code == 0
+    assert (report_dir / "check.user_summary.md").exists()
+    assert payload["artifacts"]["user_summary_md"] == str(report_dir / "check.user_summary.md")
 
 
 def test_run_batch_fix_outputs_per_file_and_summary(tmp_path: Path) -> None:
@@ -74,6 +95,7 @@ def test_run_batch_fix_outputs_per_file_and_summary(tmp_path: Path) -> None:
     assert summary["succeeded"] == 2
     assert summary["failed"] == 0
     assert len(summary["items"]) == 2
+    assert all("user_summary_md" in item for item in summary["items"])
 
 
 def test_cli_batch_fix_non_recursive(tmp_path: Path) -> None:

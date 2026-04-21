@@ -8,6 +8,8 @@ from typing import Any
 from thesis_format_fixer.contracts.report_types import (
     ExecutionReport,
     RuleExecutionRecord,
+    UserSummaryArtifact,
+    UserSummaryCategorySummary,
     UserResultSummary,
     UserSummaryItem,
     UserSummaryTopAction,
@@ -211,11 +213,13 @@ def build_user_result_summary(
     other_reminder_count = len(other_tip_items)
     technical_summary = {key: int(summary.get(key, 0)) for key in TECHNICAL_SUMMARY_KEYS}
 
-    overall_status = f"已完成{processing_label}，未发现需要你额外处理的问题"
+    overall_status = f"已完成{processing_label}，当前未发现需要你额外处理的问题"
     if manual_review_required_count > 0:
         overall_status = f"已完成{processing_label}，但仍有需要人工复核的问题"
     elif detected_not_auto_modified_count > 0:
         overall_status = f"已完成{processing_label}，但仍有检测到未自动修改的问题"
+    elif processing_type == "fix" and auto_fixed_count > 0:
+        overall_status = f"已完成修复，本次已实际修改文档中的 {auto_fixed_count} 项问题"
 
     key_issues: list[str] = []
     if detected_not_auto_modified_count > 0:
@@ -240,8 +244,60 @@ def build_user_result_summary(
         next_steps.append("重点核对参考文献条目格式和顺序。")
     next_steps.append("处理完成后，打开详细报告逐项复查。")
 
+    category_summaries = (
+        UserSummaryCategorySummary(
+            category_key="auto_fixed",
+            category_title="已自动修复 / 已自动处理",
+            count=auto_fixed_count,
+            description="系统已完成安全范围内的自动处理。",
+        ),
+        UserSummaryCategorySummary(
+            category_key="detected_not_auto_modified",
+            category_title="检测到异常但未自动修改",
+            count=detected_not_auto_modified_count,
+            description="系统已发现异常，但为避免误改，未直接修改文档。",
+        ),
+        UserSummaryCategorySummary(
+            category_key="manual_review_required",
+            category_title="需要人工复核",
+            count=manual_review_required_count,
+            description="这些问题超出当前安全自动处理边界，建议人工确认。",
+        ),
+        UserSummaryCategorySummary(
+            category_key="reference",
+            category_title="参考文献相关提醒",
+            count=reference_reminder_count,
+            description="建议重点检查参考文献条目格式、顺序和类型标识。",
+        ),
+        UserSummaryCategorySummary(
+            category_key="footnote",
+            category_title="脚注相关提醒",
+            count=footnote_reminder_count,
+            description="建议复核脚注类型、编号和样式是否符合要求。",
+        ),
+    )
+    artifact_label_map = {
+        "input_file": "输入文件",
+        "fixed_docx": "修复后论文文件",
+        "technical_report_json": "技术报告 JSON",
+        "technical_report_md": "技术报告 Markdown",
+        "report_json": "技术报告 JSON",
+        "report_md": "技术报告 Markdown",
+        "user_summary_md": "用户版摘要文件",
+    }
+    artifacts = tuple(
+        UserSummaryArtifact(
+            artifact_key=key,
+            label=artifact_label_map.get(key, key),
+            path=value,
+        )
+        for key, value in artifact_paths.items()
+        if isinstance(value, str) and value.strip() and value != "(not generated)"
+    )
+
     return UserResultSummary(
-        processing_type=processing_label,
+        processing_type=processing_type,
+        processing_label=processing_label,
         overall_status=overall_status,
         auto_fixed_count=auto_fixed_count,
         detected_not_auto_modified_count=detected_not_auto_modified_count,
@@ -257,7 +313,9 @@ def build_user_result_summary(
         reference_items=reference_items,
         footnote_items=footnote_items,
         other_tip_items=other_tip_items,
+        category_summaries=category_summaries,
         top_actions=tuple(top_actions),
+        artifacts=artifacts,
         technical_summary=technical_summary,
         artifact_paths=artifact_paths,
     )
@@ -267,20 +325,25 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
     lines = [
         "# 用户版结果摘要",
         "",
-        "## 处理结果概览",
+        "## 概览结果",
         "",
-        f"- 本次处理类型：{summary.processing_type}",
+        f"- 本次操作类型：{summary.processing_type}",
+        f"- 操作说明：{summary.processing_label}",
         f"- 总体状态：{summary.overall_status}",
-        f"- 自动修复数量：{summary.auto_fixed_count}",
-        f"- 检测到但未自动修改数量：{summary.detected_not_auto_modified_count}",
-        f"- 需要人工复核数量：{summary.manual_review_required_count}",
-        f"- 参考文献相关提醒数量：{summary.reference_reminder_count}",
-        f"- 脚注相关提醒数量：{summary.footnote_reminder_count}",
-        f"- 其他提示数量：{summary.other_reminder_count}",
+        f"- 已自动修复 / 已自动处理：{summary.auto_fixed_count}",
+        f"- 检测到异常但未自动修改：{summary.detected_not_auto_modified_count}",
+        f"- 需要人工复核：{summary.manual_review_required_count}",
+        f"- 参考文献相关提醒：{summary.reference_reminder_count}",
+        f"- 脚注相关提醒：{summary.footnote_reminder_count}",
+        f"- 其他提示：{summary.other_reminder_count}",
         "",
-        "## 关键问题清单",
+        "## 分类结果",
         "",
     ]
+    for category in summary.category_summaries:
+        lines.append(f"- {category.category_title}：{category.count} 项。{category.description}")
+
+    lines.extend(["", "## 结果概览补充", ""])
 
     for issue in summary.key_issues:
         lines.append(f"- {issue}")
@@ -334,9 +397,12 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
     else:
         lines.append("- 当前没有其他提示。")
 
-    lines.extend(["", "## 结果文件位置说明", ""])
-    for key, path in summary.artifact_paths.items():
-        lines.append(f"- {key}: {path}")
+    lines.extend(["", "## 相关输出文件路径", ""])
+    if summary.artifacts:
+        for artifact in summary.artifacts:
+            lines.append(f"- {artifact.label}：{artifact.path}")
+    else:
+        lines.append("- 当前没有可展示的输出文件路径。")
 
     lines.extend(["", "## 建议下一步", ""])
     for step in summary.next_steps:

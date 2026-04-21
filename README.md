@@ -63,6 +63,7 @@ python3 -m thesis_format_fixer.gui
 
 3. 执行完成后，界面内可直接查看：
 - `用户版中文摘要`：优先展示总体状态、自动修复数量、未自动修改数量、人工复核数量
+- `分类结果`：区分“已自动修复 / 已自动处理”“检测到异常但未自动修改”“需要人工复核”
 - `详细结果 / 日志`：查看详细结果、批量逐文件结果与失败时的技术信息
 - `报告与输出文件快捷入口`：双击打开关键文件
 - `打开输出目录` / `打开关键报告` / `打开用户摘要`
@@ -105,16 +106,18 @@ GUI 结果区说明：
 
 - `*.check.report.json`
 - `*.check.report.md`
+- `check.user_summary.md`
 
 ### 单文件 `fix`
 
 - `*.fixed.docx`
 - `*.report.json`
 - `*.report.md`
+- `fix.user_summary.md`
 
 ### 批量 `batch-fix`
 
-- 每个输入文件对应：`*.fixed.docx` + `*.report.json` + `*.report.md`
+- 每个输入文件对应：`*.fixed.docx` + `*.report.json` + `*.report.md` + `*.user_summary.md`
 - 保持输入目录的相对结构
 - 汇总文件：
   - `batch_summary.json`

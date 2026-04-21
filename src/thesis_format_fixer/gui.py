@@ -288,7 +288,8 @@ def format_gui_result(result: GuiExecutionResult) -> str:
     processing_label = "修复" if result.mode == "fix" else "检查"
     lines = [
         "GUI 用户版结果面板",
-        f"- 本次处理类型：{processing_label}",
+        f"- 本次操作类型：{result.mode}",
+        f"- 操作说明：{processing_label}",
         f"- 输入文件：{result.input_file}",
         f"- 输出目录：{result.output_dir}",
         f"- 执行状态：{'成功' if result.success else '失败'}（exit_code={result.exit_code}）",
@@ -298,26 +299,59 @@ def format_gui_result(result: GuiExecutionResult) -> str:
         lines.extend(
             [
                 "",
-                "用户版中文摘要",
+                "概览结果",
                 f"- 总体状态：{user_summary.get('overall_status', '')}",
-                f"- 自动修复数量：{user_summary.get('auto_fixed_count', summary.get('auto_fix_rule_count', 0))}",
+                "- 已自动修复 / 已自动处理："
+                + str(user_summary.get('auto_fixed_count', summary.get('auto_fix_rule_count', 0))),
                 "- "
-                + "检测到但未自动修改数量："
+                + "检测到异常但未自动修改："
                 + str(
                     user_summary.get(
                         "detected_not_auto_modified_count",
                         summary.get("detected_not_auto_modified_count", 0),
                     )
                 ),
-                f"- 需要人工复核数量：{user_summary.get('manual_review_required_count', summary.get('manual_review_required_count', 0))}",
-                f"- 参考文献相关提醒数量：{user_summary.get('reference_reminder_count', summary.get('reference_finding_count', 0))}",
-                f"- 脚注相关提醒数量：{user_summary.get('footnote_reminder_count', 0)}",
-                f"- 其他提示数量：{user_summary.get('other_reminder_count', 0)}",
+                f"- 需要人工复核：{user_summary.get('manual_review_required_count', summary.get('manual_review_required_count', 0))}",
+                f"- 参考文献相关提醒：{user_summary.get('reference_reminder_count', summary.get('reference_finding_count', 0))}",
+                f"- 脚注相关提醒：{user_summary.get('footnote_reminder_count', 0)}",
+                f"- 其他提示：{user_summary.get('other_reminder_count', 0)}",
             ]
         )
+        category_summaries = user_summary.get("category_summaries", [])
+        lines.extend(["", "分类结果"])
+        if isinstance(category_summaries, list) and category_summaries:
+            for item in category_summaries:
+                if not isinstance(item, dict):
+                    continue
+                title = str(item.get("category_title", "")).strip()
+                count = item.get("count", 0)
+                description = str(item.get("description", "")).strip()
+                if title:
+                    lines.append(f"- {title}：{count} 项。{description}")
+        else:
+            lines.extend(
+                [
+                    "- 已自动修复 / 已自动处理："
+                    + str(user_summary.get("auto_fixed_count", summary.get("auto_fix_rule_count", 0))),
+                    "- 检测到异常但未自动修改："
+                    + str(
+                        user_summary.get(
+                            "detected_not_auto_modified_count",
+                            summary.get("detected_not_auto_modified_count", 0),
+                        )
+                    ),
+                    "- 需要人工复核："
+                    + str(
+                        user_summary.get(
+                            "manual_review_required_count",
+                            summary.get("manual_review_required_count", 0),
+                        )
+                    ),
+                ]
+            )
         key_issues = user_summary.get("key_issues", [])
         if isinstance(key_issues, list) and key_issues:
-            lines.append("- 关键问题清单：")
+            lines.append("- 结果概览补充：")
             lines.extend(f"  - {item}" for item in key_issues if isinstance(item, str) and item.strip())
         next_steps = user_summary.get("next_steps", [])
         if isinstance(next_steps, list) and next_steps:
@@ -325,14 +359,14 @@ def format_gui_result(result: GuiExecutionResult) -> str:
             lines.extend(f"  - {item}" for item in next_steps if isinstance(item, str) and item.strip())
     elif summary:
         lines.append(
-            "\n用户版中文摘要\n"
-            + f"- 自动修复数量：{summary.get('auto_fix_rule_count', 0)}\n"
-            + f"- 检测到但未自动修改数量：{summary.get('detected_not_auto_modified_count', 0)}\n"
-            + f"- 需要人工复核数量：{summary.get('manual_review_required_count', 0)}\n"
-            + f"- 参考文献相关提醒数量：{summary.get('reference_finding_count', 0)}"
+            "\n概览结果\n"
+            + f"- 已自动修复 / 已自动处理：{summary.get('auto_fix_rule_count', 0)}\n"
+            + f"- 检测到异常但未自动修改：{summary.get('detected_not_auto_modified_count', 0)}\n"
+            + f"- 需要人工复核：{summary.get('manual_review_required_count', 0)}\n"
+            + f"- 参考文献相关提醒：{summary.get('reference_finding_count', 0)}"
         )
 
-    lines.extend(["", "文件出口"])
+    lines.extend(["", "查看与导出"])
     fixed_docx = artifacts.get("fixed_docx") if isinstance(artifacts, dict) else None
     report_md = artifacts.get("technical_report_md") if isinstance(artifacts, dict) else None
     report_json = artifacts.get("technical_report_json") if isinstance(artifacts, dict) else None
@@ -348,7 +382,10 @@ def format_gui_result(result: GuiExecutionResult) -> str:
     if isinstance(report_json, str) and report_json.strip():
         lines.append(f"- 技术版报告（JSON）：{report_json}")
     if isinstance(user_summary_md, str) and user_summary_md.strip():
-        lines.append(f"- 用户版摘要文件：{user_summary_md}")
+        lines.append(f"- 查看用户摘要：结果面板上方“用户版中文摘要”区域")
+        lines.append(f"- 打开摘要文件：{user_summary_md}")
+    if result.output_dir.exists():
+        lines.append(f"- 打开输出目录：{result.output_dir}")
 
     technical_summary = user_summary.get("technical_summary", {}) if isinstance(user_summary, dict) else {}
     if isinstance(technical_summary, dict) and technical_summary:
@@ -747,7 +784,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.open_report_button.clicked.connect(self._open_detailed_report)
             layout.addWidget(self.open_report_button)
 
-            self.open_user_summary_button = QPushButton("打开用户摘要", group)
+            self.open_user_summary_button = QPushButton("打开摘要文件", group)
             self.open_user_summary_button.clicked.connect(self._open_user_summary)
             layout.addWidget(self.open_user_summary_button)
 

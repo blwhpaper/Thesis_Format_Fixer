@@ -57,16 +57,47 @@ def _derive_report_paths(output_docx: Path) -> tuple[Path, Path]:
     return report_json, report_md
 
 
-def _derive_user_summary_path(*, report_json: Path | None, report_md: Path | None, input_file: Path) -> Path:
+def _derive_user_summary_path(
+    *,
+    report_json: Path | None,
+    report_md: Path | None,
+    input_file: Path,
+    output_docx: Path | None,
+) -> Path:
+    if output_docx is not None:
+        return output_docx.parent / "fix.user_summary.md"
     if report_md is not None:
-        if report_md.name.endswith(".report.md"):
-            return report_md.with_name(report_md.name[: -len(".report.md")] + ".user_summary.md")
-        return report_md.with_name(report_md.stem + ".user_summary.md")
+        return report_md.parent / "check.user_summary.md"
     if report_json is not None:
-        if report_json.name.endswith(".report.json"):
-            return report_json.with_name(report_json.name[: -len(".report.json")] + ".user_summary.md")
-        return report_json.with_name(report_json.stem + ".user_summary.md")
-    return input_file.with_name(f"{input_file.stem}.check.user_summary.md")
+        return report_json.parent / "check.user_summary.md"
+    return input_file.with_name("check.user_summary.md")
+
+
+def _serialize_user_summary(user_summary: Any) -> dict[str, Any]:
+    return {
+        "processing_type": user_summary.processing_type,
+        "processing_label": user_summary.processing_label,
+        "overall_status": user_summary.overall_status,
+        "auto_fixed_count": user_summary.auto_fixed_count,
+        "detected_not_auto_modified_count": user_summary.detected_not_auto_modified_count,
+        "manual_review_required_count": user_summary.manual_review_required_count,
+        "reference_reminder_count": user_summary.reference_reminder_count,
+        "footnote_reminder_count": user_summary.footnote_reminder_count,
+        "other_reminder_count": user_summary.other_reminder_count,
+        "key_issues": list(user_summary.key_issues),
+        "next_steps": list(user_summary.next_steps),
+        "auto_fixed_items": [asdict(item) for item in user_summary.auto_fixed_items],
+        "detected_but_not_fixed_items": [asdict(item) for item in user_summary.detected_but_not_fixed_items],
+        "manual_review_items": [asdict(item) for item in user_summary.manual_review_items],
+        "reference_items": [asdict(item) for item in user_summary.reference_items],
+        "footnote_items": [asdict(item) for item in user_summary.footnote_items],
+        "other_tip_items": [asdict(item) for item in user_summary.other_tip_items],
+        "category_summaries": [asdict(item) for item in user_summary.category_summaries],
+        "top_actions": [asdict(item) for item in user_summary.top_actions],
+        "artifacts": [asdict(item) for item in user_summary.artifacts],
+        "technical_summary": dict(user_summary.technical_summary),
+        "artifact_paths": dict(user_summary.artifact_paths),
+    }
 
 
 def _ensure_input_docx_file(input_file: Path) -> None:
@@ -696,6 +727,7 @@ def _run_single(
     output_docx: Path | None,
     report_json_out: Path | None,
     report_md_out: Path | None,
+    user_summary_out: Path | None = None,
     review_mode: str = "off",
     review_targets: str | tuple[str, ...] | list[str] | None = None,
     review_local_model: str | None = None,
@@ -728,10 +760,11 @@ def _run_single(
     if final_md_out is not None:
         _write_markdown(final_md_out, payload)
 
-    user_summary_path = _derive_user_summary_path(
+    user_summary_path = user_summary_out or _derive_user_summary_path(
         report_json=final_json_out,
         report_md=final_md_out,
         input_file=input_file,
+        output_docx=output_docx,
     )
     artifact_paths = {
         "input_file": str(input_file),
@@ -750,27 +783,7 @@ def _run_single(
     user_summary_md = render_user_summary_markdown(user_summary, payload=payload)
     user_summary_path.parent.mkdir(parents=True, exist_ok=True)
     user_summary_path.write_text(user_summary_md, encoding="utf-8")
-    payload["user_summary"] = {
-        "processing_type": user_summary.processing_type,
-        "overall_status": user_summary.overall_status,
-        "auto_fixed_count": user_summary.auto_fixed_count,
-        "detected_not_auto_modified_count": user_summary.detected_not_auto_modified_count,
-        "manual_review_required_count": user_summary.manual_review_required_count,
-        "reference_reminder_count": user_summary.reference_reminder_count,
-        "footnote_reminder_count": user_summary.footnote_reminder_count,
-        "other_reminder_count": user_summary.other_reminder_count,
-        "key_issues": list(user_summary.key_issues),
-        "next_steps": list(user_summary.next_steps),
-        "auto_fixed_items": [asdict(item) for item in user_summary.auto_fixed_items],
-        "detected_but_not_fixed_items": [asdict(item) for item in user_summary.detected_but_not_fixed_items],
-        "manual_review_items": [asdict(item) for item in user_summary.manual_review_items],
-        "reference_items": [asdict(item) for item in user_summary.reference_items],
-        "footnote_items": [asdict(item) for item in user_summary.footnote_items],
-        "other_tip_items": [asdict(item) for item in user_summary.other_tip_items],
-        "top_actions": [asdict(item) for item in user_summary.top_actions],
-        "technical_summary": dict(user_summary.technical_summary),
-        "artifact_paths": dict(user_summary.artifact_paths),
-    }
+    payload["user_summary"] = _serialize_user_summary(user_summary)
     payload["artifacts"] = {
         "fixed_docx": str(output_docx) if output_docx is not None else None,
         "technical_report_json": str(final_json_out) if final_json_out is not None else None,
@@ -986,6 +999,7 @@ def run_batch_fix(
         output_docx = target_dir / f"{input_file.stem}.fixed.docx"
         report_json = target_dir / f"{input_file.stem}.report.json"
         report_md = target_dir / f"{input_file.stem}.report.md"
+        user_summary_md = target_dir / f"{input_file.stem}.user_summary.md"
 
         try:
             code, payload, _, _ = _run_single(
@@ -993,6 +1007,7 @@ def run_batch_fix(
                 output_docx=output_docx,
                 report_json_out=report_json,
                 report_md_out=report_md,
+                user_summary_out=user_summary_md,
                 review_mode=review_mode,
                 review_targets=review_targets,
                 review_local_model=review_local_model,
@@ -1012,6 +1027,7 @@ def run_batch_fix(
                 "output_docx": str(output_docx),
                 "report_json": str(report_json),
                 "report_md": str(report_md),
+                "user_summary_md": str(user_summary_md),
                 "exit_code": code,
                 "error": payload.get("error"),
                 "summary": payload.get("summary", {}),
@@ -1066,7 +1082,8 @@ def run_batch_fix(
                 + f"exit_code={item['exit_code']} "
                 + f"input={item['input_file']} "
                 + f"output={item['output_docx']} "
-                + f"report={item['report_json']}"
+                + f"report={item['report_json']} "
+                + f"user_summary={item['user_summary_md']}"
             )
             if item.get("error"):
                 md_lines.append(f"  error={item['error']}")

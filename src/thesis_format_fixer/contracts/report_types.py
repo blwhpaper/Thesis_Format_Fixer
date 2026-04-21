@@ -137,8 +137,24 @@ class UserSummaryTopAction:
 
 
 @dataclass(frozen=True, slots=True)
+class UserSummaryCategorySummary:
+    category_key: str
+    category_title: str
+    count: int
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class UserSummaryArtifact:
+    artifact_key: str
+    label: str
+    path: str
+
+
+@dataclass(frozen=True, slots=True)
 class UserResultSummary:
     processing_type: str
+    processing_label: str
     overall_status: str
     auto_fixed_count: int
     detected_not_auto_modified_count: int
@@ -154,6 +170,8 @@ class UserResultSummary:
     reference_items: tuple[UserSummaryItem, ...]
     footnote_items: tuple[UserSummaryItem, ...]
     other_tip_items: tuple[UserSummaryItem, ...]
+    category_summaries: tuple[UserSummaryCategorySummary, ...]
     top_actions: tuple[UserSummaryTopAction, ...]
+    artifacts: tuple[UserSummaryArtifact, ...]
     technical_summary: dict[str, int]
     artifact_paths: dict[str, str]

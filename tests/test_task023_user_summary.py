@@ -29,10 +29,15 @@ def test_user_summary_contains_auto_fixed_section_when_auto_fix_exists() -> None
     ]
     summary = build_user_result_summary(payload, artifact_paths={"user_summary_md": "/tmp/user_summary.md"})
     md = render_user_summary_markdown(summary, payload=payload)
+    assert summary.processing_type == "check"
+    assert summary.processing_label == "检查"
+    assert summary.category_summaries[0].category_title == "已自动修复 / 已自动处理"
     assert "## 已自动修改（明细）" in md
     assert "中文摘要标题文本为摘 要" in md
     assert "已处理" in md
-    assert "本次处理类型" in md
+    assert "## 概览结果" in md
+    assert "本次操作类型：check" in md
+    assert "## 分类结果" in md
     assert "## 技术字段（次级）" in md
 
 
@@ -49,10 +54,11 @@ def test_user_summary_contains_detected_not_fixed_section() -> None:
     ]
     summary = build_user_result_summary(payload, artifact_paths={"user_summary_md": "/tmp/user_summary.md"})
     md = render_user_summary_markdown(summary, payload=payload)
-    assert "## 关键问题清单" in md
+    assert "## 结果概览补充" in md
     assert "## 发现但未自动修改" in md
     assert "未自动修改" in md
     assert "原因：" in md
+    assert "检测到异常但未自动修改" in md
     assert "## 其他提示" in md
 
 
@@ -83,4 +89,5 @@ def test_user_summary_is_generated_safely_when_no_issues() -> None:
     assert "本次未发生可自动修改的问题" in md
     assert "当前没有必须优先人工处理的项" in md
     assert "本次未发现明显格式风险" in md
+    assert "## 相关输出文件路径" in md
     assert "## 参考文献相关" in md
