@@ -236,11 +236,12 @@ def test_execute_gui_batch_task_and_format_result(tmp_path: Path) -> None:
     assert len(result.items) == 2
 
     formatted = gui.format_gui_batch_result(result)
-    assert "mode: batch-fix" in formatted
-    assert "total_files: 2" in formatted
-    assert "succeeded: 1" in formatted
-    assert "failed: 1" in formatted
-    assert "batch_summary_json:" in formatted
+    assert "GUI 批量修复结果面板" in formatted
+    assert "处理文件总数：2" in formatted
+    assert "成功数量：1" in formatted
+    assert "失败数量：1" in formatted
+    assert "批处理汇总 JSON：" in formatted
+    assert "逐文件结果" in formatted
     assert "exit_code=0" in formatted
     assert "exit_code=1" in formatted
 
@@ -254,6 +255,83 @@ def test_execute_gui_task_raises_for_missing_input_file(tmp_path: Path) -> None:
         assert "输入文件不存在" in str(exc)
     else:  # pragma: no cover - defensive
         raise AssertionError("expected FileNotFoundError")
+
+
+def test_execute_gui_task_raises_for_non_docx_input(tmp_path: Path) -> None:
+    input_file = tmp_path / "demo.txt"
+    input_file.write_text("hello", encoding="utf-8")
+
+    try:
+        gui.execute_gui_task(input_file=input_file, output_dir=tmp_path / "out", mode="check")
+    except ValueError as exc:
+        assert "输入文件必须是 .docx" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("expected ValueError")
+
+
+def test_execute_gui_task_returns_localized_error_for_invalid_output_path(tmp_path: Path) -> None:
+    input_docx = tmp_path / "demo.docx"
+    input_docx.write_bytes(b"fake")
+    output_as_file = tmp_path / "occupied"
+    output_as_file.write_text("not-a-dir", encoding="utf-8")
+
+    result = gui.execute_gui_task(input_file=input_docx, output_dir=output_as_file, mode="check")
+
+    assert result.success is False
+    assert result.error_text is not None
+    assert "输出目录不可创建" in result.error_text
+
+
+def test_execute_gui_batch_task_empty_input_dir_shows_warning_without_raw_runner_error(tmp_path: Path) -> None:
+    input_dir = tmp_path / "empty"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = tmp_path / "out"
+
+    def _stub_batch_runner(
+        _input_dir: Path,
+        _output_dir: Path,
+        *,
+        recursive: bool = True,
+    ) -> int:
+        payload = {
+            "schema_version": "task-005-batch-summary-v1",
+            "input_dir": str(_input_dir),
+            "output_dir": str(_output_dir),
+            "total_files": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "warning": "输入目录中未找到 .docx 文件",
+            "items": [],
+        }
+        _output_dir.mkdir(parents=True, exist_ok=True)
+        (_output_dir / "batch_summary.json").write_text(json.dumps(payload), encoding="utf-8")
+        return 2
+
+    result = gui.execute_gui_batch_task(
+        input_dir=input_dir,
+        output_dir=output_dir,
+        batch_runner=_stub_batch_runner,
+    )
+
+    assert result.success is False
+    assert result.total_files == 0
+    assert result.error_text is None
+    formatted = gui.format_gui_batch_result(result)
+    assert "提示：输入目录中未找到 .docx 文件" in formatted
+    assert "Runner exit code" not in formatted
+
+
+def test_execute_gui_batch_task_returns_localized_error_for_invalid_output_path(tmp_path: Path) -> None:
+    input_dir = tmp_path / "in"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    output_as_file = tmp_path / "occupied"
+    output_as_file.write_text("not-a-dir", encoding="utf-8")
+
+    result = gui.execute_gui_batch_task(input_dir=input_dir, output_dir=output_as_file)
+
+    assert result.success is False
+    assert result.error_text is not None
+    assert "输出目录不可创建" in result.error_text
 
 
 def test_open_user_summary_when_present(monkeypatch, tmp_path: Path) -> None:

@@ -169,6 +169,42 @@ filedialog: object | None = _DialogBridge()
 messagebox: object | None = _MessageBoxBridge()
 
 
+def _ensure_gui_output_directory_writable(output_dir: Path) -> None:
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except FileExistsError as exc:
+        raise PermissionError(f"输出目录不可创建: {output_dir}") from exc
+    except OSError as exc:
+        raise PermissionError(f"输出目录不可创建: {output_dir}") from exc
+
+    probe_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            dir=output_dir,
+            prefix=".gui_write_probe_",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            probe_path = Path(handle.name)
+    except OSError as exc:
+        raise PermissionError(f"输出目录不可写: {output_dir}") from exc
+    finally:
+        if probe_path is not None and probe_path.exists():
+            probe_path.unlink(missing_ok=True)
+
+
+def _localize_gui_error(exc: Exception) -> str:
+    if isinstance(exc, PermissionError):
+        return str(exc)
+    if isinstance(exc, FileNotFoundError):
+        return str(exc)
+    if isinstance(exc, IsADirectoryError):
+        return str(exc)
+    if isinstance(exc, ValueError):
+        return str(exc)
+    return f"处理失败：{exc}"
+
+
 def _default_report_paths(input_file: Path, output_dir: Path, mode: str) -> tuple[Path, Path]:
     if mode == "check":
         report_stem = f"{input_file.stem}.check.report"
@@ -195,11 +231,10 @@ def execute_gui_task(
     if input_file.suffix.lower() != ".docx":
         raise ValueError("输入文件必须是 .docx")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    report_json, report_md = _default_report_paths(input_file, output_dir, normalized_mode)
-    generated_files: list[Path] = []
-
     try:
+        _ensure_gui_output_directory_writable(output_dir)
+        report_json, report_md = _default_report_paths(input_file, output_dir, normalized_mode)
+        generated_files: list[Path] = []
         if normalized_mode == "check":
             code, payload, _, _ = check_runner(
                 input_file,
@@ -228,9 +263,9 @@ def execute_gui_task(
             output_dir=output_dir,
             success=False,
             exit_code=1,
-            generated_files=tuple(path for path in generated_files if path.exists()),
+            generated_files=tuple(path for path in locals().get("generated_files", []) if path.exists()),
             payload={},
-            error_text=str(exc),
+            error_text=_localize_gui_error(exc),
         )
 
     existing_files = tuple(path for path in generated_files if path.exists())
@@ -360,7 +395,22 @@ def execute_gui_batch_task(
     if not input_dir.exists() or not input_dir.is_dir():
         raise ValueError(f"输入目录不存在或不可用: {input_dir}")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _ensure_gui_output_directory_writable(output_dir)
+    except PermissionError as exc:
+        return GuiBatchExecutionResult(
+            input_dir=input_dir,
+            output_dir=output_dir,
+            recursive=recursive,
+            success=False,
+            exit_code=1,
+            total_files=0,
+            succeeded=0,
+            failed=0,
+            items=(),
+            summary_payload={},
+            error_text=_localize_gui_error(exc),
+        )
     summary_json = output_dir / "batch_summary.json"
 
     try:
@@ -377,7 +427,7 @@ def execute_gui_batch_task(
             failed=0,
             items=(),
             summary_payload={},
-            error_text=str(exc),
+            error_text=_localize_gui_error(exc),
         )
 
     payload: dict[str, Any] = {}
@@ -395,9 +445,13 @@ def execute_gui_batch_task(
     total_files = int(payload.get("total_files", len(items))) if isinstance(payload, dict) else len(items)
     succeeded = int(payload.get("succeeded", 0)) if isinstance(payload, dict) else 0
     failed = int(payload.get("failed", 0)) if isinstance(payload, dict) else 0
+    warning = payload.get("warning") if isinstance(payload, dict) else None
     success = (code == 0) and parse_error is None
     error_text = parse_error
-    if code != 0:
+    expected_empty_warning = bool(
+        code == 2 and isinstance(warning, str) and warning.strip() and total_files == 0 and failed == 0
+    )
+    if code != 0 and not expected_empty_warning:
         error_text = (error_text + "\n" if error_text else "") + f"Runner exit code: {code}"
 
     return GuiBatchExecutionResult(
@@ -417,37 +471,50 @@ def execute_gui_batch_task(
 
 def format_gui_batch_result(result: GuiBatchExecutionResult) -> str:
     warning = result.summary_payload.get("warning") if isinstance(result.summary_payload, dict) else None
+    summary_json = result.output_dir / "batch_summary.json"
+    summary_md = result.output_dir / "batch_summary.md"
     lines = [
-        "mode: batch-fix",
-        f"input_dir: {result.input_dir}",
-        f"output_dir: {result.output_dir}",
-        f"recursive: {result.recursive}",
-        f"status: {'success' if result.success else 'failure'} (exit_code={result.exit_code})",
-        f"batch_summary_json: {result.output_dir / 'batch_summary.json'}",
-        f"batch_summary_md: {result.output_dir / 'batch_summary.md'}",
-        "summary:",
-        f"- total_files: {result.total_files}",
-        f"- succeeded: {result.succeeded}",
-        f"- failed: {result.failed}",
-        "per_file_status:",
+        "GUI 批量修复结果面板",
+        f"- 本次处理类型：批量修复",
+        f"- 输入目录：{result.input_dir}",
+        f"- 输出目录：{result.output_dir}",
+        f"- 扫描方式：{'递归扫描子目录' if result.recursive else '仅扫描当前目录'}",
+        f"- 执行状态：{'成功' if result.success else '未完全成功'}（exit_code={result.exit_code}）",
+        "",
+        "批量结果摘要",
+        f"- 处理文件总数：{result.total_files}",
+        f"- 成功数量：{result.succeeded}",
+        f"- 失败数量：{result.failed}",
+        f"- 批处理汇总 JSON：{summary_json}",
+        f"- 批处理汇总 Markdown：{summary_md}",
+        "",
+        "逐文件结果",
     ]
 
     if result.items:
         for item in result.items:
+            input_file = item.get("input_file")
+            output_docx = item.get("output_docx")
+            report_json = item.get("report_json")
+            report_md = item.get("report_md")
             lines.append(
                 "- "
-                + f"exit_code={item.get('exit_code')} "
-                + f"input={item.get('input_file')} "
-                + f"output={item.get('output_docx')}"
+                + f"exit_code={item.get('exit_code')} 输入={input_file} 修复后文件={output_docx}"
             )
+            if report_md:
+                lines.append(f"  报告 Markdown：{report_md}")
+            if report_json:
+                lines.append(f"  报告 JSON：{report_json}")
+            if item.get("error"):
+                lines.append(f"  错误：{item.get('error')}")
     else:
-        lines.append("- (none)")
+        lines.append("- 当前没有可展示的单文件结果。")
 
     if warning:
-        lines.append(f"warning: {warning}")
+        lines.extend(["", f"提示：{warning}"])
 
     if result.error_text:
-        lines.extend(["error:", result.error_text.strip()])
+        lines.extend(["", "错误信息", result.error_text.strip()])
     return "\n".join(lines) + "\n"
 
 
@@ -987,12 +1054,16 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 lines.extend(["", f"提醒：{warning}"])
             if result.failed > 0:
                 lines.extend(["", "建议：先打开批处理摘要，优先处理失败项。"])
+            elif warning:
+                lines.extend(["", "建议：请确认输入目录中是否放入了待处理的 .docx 文件。"])
             else:
                 lines.extend(["", "建议：打开输出目录抽查关键文件和批处理摘要。"])
             self.summary_text.setPlainText("\n".join(lines))
 
             if result.success:
                 self._set_status_text("批量修复完成。")
+            elif warning and result.total_files == 0 and result.failed == 0:
+                self._set_status_text("批量处理已完成，但输入目录中未找到 .docx 文件。")
             else:
                 self._set_status_text("批量修复结束，但存在失败或摘要异常。")
                 if result.error_text and messagebox is not None:
