@@ -739,12 +739,23 @@ def _run_single(
         "report_md": str(final_md_out) if final_md_out is not None else "(not generated)",
         "user_summary_md": str(user_summary_path),
     }
-    user_summary = build_user_result_summary(payload, artifact_paths=artifact_paths)
+    user_summary = build_user_result_summary(
+        payload,
+        artifact_paths=artifact_paths,
+        processing_type="fix" if output_docx is not None else "check",
+    )
     user_summary_md = render_user_summary_markdown(user_summary, payload=payload)
     user_summary_path.parent.mkdir(parents=True, exist_ok=True)
     user_summary_path.write_text(user_summary_md, encoding="utf-8")
     payload["user_summary"] = {
+        "processing_type": user_summary.processing_type,
         "overall_status": user_summary.overall_status,
+        "auto_fixed_count": user_summary.auto_fixed_count,
+        "detected_not_auto_modified_count": user_summary.detected_not_auto_modified_count,
+        "manual_review_required_count": user_summary.manual_review_required_count,
+        "reference_reminder_count": user_summary.reference_reminder_count,
+        "key_issues": list(user_summary.key_issues),
+        "next_steps": list(user_summary.next_steps),
         "auto_fixed_items": [asdict(item) for item in user_summary.auto_fixed_items],
         "detected_but_not_fixed_items": [asdict(item) for item in user_summary.detected_but_not_fixed_items],
         "manual_review_items": [asdict(item) for item in user_summary.manual_review_items],

@@ -56,8 +56,11 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert len(result.generated_files) == 3
     assert result.error_text is None
-    assert "reference_finding_count" in gui.format_gui_result(result)
-    assert "user_summary:" in gui.format_gui_result(result)
+    formatted = gui.format_gui_result(result)
+    assert "中文结果面板" in formatted
+    assert "用户版中文摘要" in formatted
+    assert "参考文献相关提醒数量" in formatted
+    assert "打开用户版摘要" in formatted
 
 
 def test_execute_gui_task_fix_failure_path(tmp_path: Path) -> None:

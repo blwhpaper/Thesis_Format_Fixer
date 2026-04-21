@@ -91,7 +91,7 @@ def _build_user_item_from_rule(item: dict[str, Any], *, handled: str) -> UserSum
     rule_name = str(item.get("rule_name", "")).strip() or "未命名规则"
     decision = str(item.get("decision", ""))
     category, why = _reason_category_text(str(item.get("reason", "")), decision=decision)
-    title = f"{rule_name}（{rule_id}）" if rule_id else rule_name
+    title = rule_name
     return UserSummaryItem(
         issue_title=title,
         issue_description=f"检测到与“{rule_name}”相关的问题。",
@@ -110,7 +110,7 @@ def _build_user_item_from_manual(item: dict[str, Any]) -> UserSummaryItem:
         rule_name = str(item.get("rule_name", "")).strip() or "未命名规则"
         category, why = _reason_category_text(str(item.get("reason", "")))
         return UserSummaryItem(
-            issue_title=f"{rule_name}（{rule_id}）" if rule_id else rule_name,
+            issue_title=rule_name,
             issue_description="该问题需要人工复核后再决定是否调整。",
             handling_status="需人工处理",
             why_not_auto_fixed=why,
@@ -137,6 +137,7 @@ def build_user_result_summary(
     payload: dict[str, Any],
     *,
     artifact_paths: dict[str, str],
+    processing_type: str = "check",
 ) -> UserResultSummary:
     sections = payload.get("sections", {})
     summary = payload.get("summary", {})
@@ -178,14 +179,50 @@ def build_user_result_summary(
             )
         )
 
-    overall_status = "已完成并全部自动处理"
-    if summary.get("manual_review_required_count", 0):
-        overall_status = "已完成处理，但仍有人工复核项"
-    elif summary.get("detected_not_auto_modified_count", 0):
-        overall_status = "已完成处理，但仍有未自动修改问题"
+    processing_label = "修复" if processing_type == "fix" else "检查"
+    auto_fixed_count = int(summary.get("auto_fix_rule_count", 0))
+    detected_not_auto_modified_count = int(summary.get("detected_not_auto_modified_count", 0))
+    manual_review_required_count = int(summary.get("manual_review_required_count", 0))
+    reference_reminder_count = int(summary.get("reference_finding_count", 0))
+
+    overall_status = f"已完成{processing_label}，未发现需要你额外处理的问题"
+    if manual_review_required_count > 0:
+        overall_status = f"已完成{processing_label}，但仍有需要人工复核的问题"
+    elif detected_not_auto_modified_count > 0:
+        overall_status = f"已完成{processing_label}，但仍有检测到未自动修改的问题"
+
+    key_issues: list[str] = []
+    if detected_not_auto_modified_count > 0:
+        key_issues.append(f"检测到 {detected_not_auto_modified_count} 项问题，系统未自动修改。")
+    if manual_review_required_count > 0:
+        key_issues.append(f"有 {manual_review_required_count} 项内容需要你人工复核。")
+    if reference_reminder_count > 0:
+        key_issues.append(f"参考文献相关提醒 {reference_reminder_count} 项。")
+    for item in detected_but_not_fixed_items[:3]:
+        key_issues.append(f"重点关注：{item.issue_title}。")
+    for item in manual_review_items[:2]:
+        key_issues.append(f"建议人工检查：{item.issue_title}。")
+    if not key_issues:
+        key_issues.append("本次未发现明显格式风险。")
+
+    next_steps: list[str] = []
+    if detected_not_auto_modified_count > 0:
+        next_steps.append("先处理“检测到但未自动修改”的问题。")
+    if manual_review_required_count > 0:
+        next_steps.append("再完成“需要人工复核”的项目，避免遗漏。")
+    if reference_reminder_count > 0:
+        next_steps.append("重点核对参考文献条目格式和顺序。")
+    next_steps.append("处理完成后，打开详细报告逐项复查。")
 
     return UserResultSummary(
+        processing_type=processing_label,
         overall_status=overall_status,
+        auto_fixed_count=auto_fixed_count,
+        detected_not_auto_modified_count=detected_not_auto_modified_count,
+        manual_review_required_count=manual_review_required_count,
+        reference_reminder_count=reference_reminder_count,
+        key_issues=tuple(key_issues),
+        next_steps=tuple(next_steps),
         auto_fixed_items=auto_fixed_items,
         detected_but_not_fixed_items=detected_but_not_fixed_items,
         manual_review_items=manual_review_items,
@@ -195,44 +232,50 @@ def build_user_result_summary(
 
 
 def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[str, Any]) -> str:
-    counts = payload.get("summary", {})
     lines = [
         "# 用户版结果摘要",
         "",
         "## 处理结果概览",
         "",
+        f"- 本次处理类型：{summary.processing_type}",
         f"- 总体状态：{summary.overall_status}",
-        f"- 自动修改项：{counts.get('auto_fix_rule_count', 0)}",
-        f"- 发现但未自动修改：{counts.get('detected_not_auto_modified_count', 0)}",
-        f"- 建议人工复核：{counts.get('manual_review_required_count', 0)}",
+        f"- 自动修复数量：{summary.auto_fixed_count}",
+        f"- 检测到但未自动修改数量：{summary.detected_not_auto_modified_count}",
+        f"- 需要人工复核数量：{summary.manual_review_required_count}",
+        f"- 参考文献相关提醒数量：{summary.reference_reminder_count}",
         "",
-        "## 已自动修改",
+        "## 关键问题清单",
         "",
     ]
 
+    for issue in summary.key_issues:
+        lines.append(f"- {issue}")
+
+    lines.extend(
+        [
+            "",
+            "## 已自动修改（明细）",
+            "",
+        ]
+    )
+
     if summary.auto_fixed_items:
         for item in summary.auto_fixed_items:
-            lines.append(
-                f"- {item.issue_title}：已处理。建议：{item.next_step or '抽查相关段落。'}"
-            )
+            lines.append(f"- {item.issue_title}：已处理。建议：{item.next_step or '抽查相关段落。'}")
     else:
         lines.append("- 本次未发生可自动修改的问题。")
 
     lines.extend(["", "## 发现但未自动修改", ""])
     if summary.detected_but_not_fixed_items:
         for item in summary.detected_but_not_fixed_items:
-            lines.append(
-                f"- {item.issue_title}：未自动修改。原因：{item.why_not_auto_fixed} 建议：{item.next_step}"
-            )
+            lines.append(f"- {item.issue_title}：未自动修改。原因：{item.why_not_auto_fixed} 建议：{item.next_step}")
     else:
         lines.append("- 本次未发现“已定位但未自动修改”的问题。")
 
     lines.extend(["", "## 建议优先人工检查", ""])
     if summary.manual_review_items:
         for item in summary.manual_review_items:
-            lines.append(
-                f"- {item.issue_title}：{item.issue_description} 原因：{item.why_not_auto_fixed} 建议：{item.next_step}"
-            )
+            lines.append(f"- {item.issue_title}：{item.issue_description} 原因：{item.why_not_auto_fixed} 建议：{item.next_step}")
     else:
         lines.append("- 当前没有必须优先人工处理的项。")
 
@@ -240,8 +283,12 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
     for key, path in summary.artifact_paths.items():
         lines.append(f"- {key}: {path}")
 
+    lines.extend(["", "## 建议下一步", ""])
+    for step in summary.next_steps:
+        lines.append(f"- {step}")
+
     if summary.top_actions:
-        lines.extend(["", "### 下一步建议", ""])
+        lines.extend(["", "## 优先建议", ""])
         for action in summary.top_actions:
             lines.append(f"- [{action.priority}] {action.title}：{action.reason}")
 

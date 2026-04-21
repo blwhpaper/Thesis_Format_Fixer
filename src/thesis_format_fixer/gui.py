@@ -135,51 +135,71 @@ def execute_gui_task(
 def format_gui_result(result: GuiExecutionResult) -> str:
     summary = result.payload.get("summary", {})
     user_summary = result.payload.get("user_summary", {})
+    artifacts = result.payload.get("artifacts", {}) if isinstance(result.payload, dict) else {}
+    processing_label = "修复" if result.mode == "fix" else "检查"
     lines = [
-        f"mode: {result.mode}",
-        f"input_file: {result.input_file}",
-        f"output_dir: {result.output_dir}",
-        f"status: {'success' if result.success else 'failure'} (exit_code={result.exit_code})",
-        "generated_files:",
+        "中文结果面板",
+        f"- 本次处理类型：{processing_label}",
+        f"- 输入文件：{result.input_file}",
+        f"- 输出目录：{result.output_dir}",
+        f"- 执行状态：{'成功' if result.success else '失败'}（exit_code={result.exit_code}）",
     ]
+
+    if isinstance(user_summary, dict) and user_summary:
+        lines.extend(
+            [
+                "",
+                "用户版中文摘要",
+                f"- 总体状态：{user_summary.get('overall_status', '')}",
+                f"- 自动修复数量：{user_summary.get('auto_fixed_count', summary.get('auto_fix_rule_count', 0))}",
+                "- "
+                + "检测到但未自动修改数量："
+                + str(
+                    user_summary.get(
+                        "detected_not_auto_modified_count",
+                        summary.get("detected_not_auto_modified_count", 0),
+                    )
+                ),
+                f"- 需要人工复核数量：{user_summary.get('manual_review_required_count', summary.get('manual_review_required_count', 0))}",
+                f"- 参考文献相关提醒数量：{user_summary.get('reference_reminder_count', summary.get('reference_finding_count', 0))}",
+            ]
+        )
+        key_issues = user_summary.get("key_issues", [])
+        if isinstance(key_issues, list) and key_issues:
+            lines.append("- 关键问题清单：")
+            lines.extend(f"  - {item}" for item in key_issues if isinstance(item, str) and item.strip())
+        next_steps = user_summary.get("next_steps", [])
+        if isinstance(next_steps, list) and next_steps:
+            lines.append("- 建议下一步：")
+            lines.extend(f"  - {item}" for item in next_steps if isinstance(item, str) and item.strip())
+    elif summary:
+        lines.append(
+            "\n用户版中文摘要\n"
+            + f"- 自动修复数量：{summary.get('auto_fix_rule_count', 0)}\n"
+            + f"- 检测到但未自动修改数量：{summary.get('detected_not_auto_modified_count', 0)}\n"
+            + f"- 需要人工复核数量：{summary.get('manual_review_required_count', 0)}\n"
+            + f"- 参考文献相关提醒数量：{summary.get('reference_finding_count', 0)}"
+        )
+
+    lines.extend(["", "报告入口"])
+    report_md = artifacts.get("report_md") if isinstance(artifacts, dict) else None
+    report_json = artifacts.get("report_json") if isinstance(artifacts, dict) else None
+    user_summary_md = artifacts.get("user_summary_md") if isinstance(artifacts, dict) else None
+    if isinstance(report_md, str) and report_md.strip():
+        lines.append(f"- 查看详细报告（Markdown）：{report_md}")
+    if isinstance(report_json, str) and report_json.strip():
+        lines.append(f"- 查看详细报告（JSON）：{report_json}")
+    if isinstance(user_summary_md, str) and user_summary_md.strip():
+        lines.append(f"- 打开用户版摘要：{user_summary_md}")
+
+    lines.extend(["", "本次产物文件"])
     if result.generated_files:
         lines.extend(f"- {path}" for path in result.generated_files)
     else:
         lines.append("- (none)")
-    lines.append(f"result_location_hint: {result.output_dir}")
-
-    if summary:
-        lines.extend(
-            [
-                "summary:",
-                f"- auto_fix_rule_count: {summary.get('auto_fix_rule_count', 0)}",
-                "- "
-                + f"detected_not_auto_modified_count: {summary.get('detected_not_auto_modified_count', 0)}",
-                f"- manual_review_required_count: {summary.get('manual_review_required_count', 0)}",
-                f"- reference_finding_count: {summary.get('reference_finding_count', 0)}",
-                f"- reference_blocking_count: {summary.get('reference_blocking_count', 0)}",
-                f"- block_low_confidence_count: {summary.get('block_low_confidence_count', 0)}",
-            ]
-        )
-
-    if isinstance(user_summary, dict) and user_summary:
-        lines.extend(["user_summary:", f"- overall_status: {user_summary.get('overall_status', '')}"])
-        lines.append(
-            "- "
-            + "counts: "
-            + f"auto_fixed={len(user_summary.get('auto_fixed_items', []))} "
-            + f"not_fixed={len(user_summary.get('detected_but_not_fixed_items', []))} "
-            + f"manual={len(user_summary.get('manual_review_items', []))}"
-        )
-        actions = user_summary.get("top_actions", [])
-        if isinstance(actions, list) and actions:
-            first = actions[0] if isinstance(actions[0], dict) else {}
-            lines.append(
-                f"- next_action: {first.get('title', '')} | {first.get('reason', '')}"
-            )
 
     if result.error_text:
-        lines.extend(["error:", result.error_text.strip()])
+        lines.extend(["", "错误信息", result.error_text.strip()])
     return "\n".join(lines) + "\n"
 
 
@@ -295,6 +315,18 @@ def open_directory(path: Path) -> None:
     subprocess.run(["xdg-open", str(path)], check=True)
 
 
+def open_file(path: Path) -> None:
+    if not path.exists():
+        raise FileNotFoundError(f"文件不存在: {path}")
+    if os.name == "nt":  # pragma: no cover - windows only
+        os.startfile(str(path))  # type: ignore[attr-defined]
+        return
+    if sys_platform_is_macos():
+        subprocess.run(["open", str(path)], check=True)
+        return
+    subprocess.run(["xdg-open", str(path)], check=True)
+
+
 def sys_platform_is_macos() -> bool:
     return os.sys.platform == "darwin"
 
@@ -311,6 +343,8 @@ class ThesisFormatFixerGUI:
         self.input_label_var = tk.StringVar(value="Input .docx")
         self.status_var = tk.StringVar(value="Ready")
         self._last_output_dir: Path | None = None
+        self._last_report_file: Path | None = None
+        self._last_user_summary_file: Path | None = None
 
         self._build_layout()
 
@@ -352,11 +386,29 @@ class ThesisFormatFixerGUI:
             command=self._on_mode_changed,
         ).pack(side="left")
 
-        self.run_button = tk.Button(root, text="Execute", command=self._execute)
-        self.run_button.grid(row=3, column=1, padx=8, pady=8, sticky="w")
+        button_frame = tk.Frame(root)
+        button_frame.grid(row=3, column=1, columnspan=2, padx=8, pady=8, sticky="ew")
+        self.run_button = tk.Button(button_frame, text="Execute", command=self._execute)
+        self.run_button.pack(side="left", padx=(0, 8))
 
-        self.open_button = tk.Button(root, text="Open Output Dir", command=self._open_output_dir, state="disabled")
-        self.open_button.grid(row=3, column=2, padx=8, pady=8, sticky="e")
+        self.open_user_summary_button = tk.Button(
+            button_frame,
+            text="Open User Summary",
+            command=self._open_user_summary,
+            state="disabled",
+        )
+        self.open_user_summary_button.pack(side="left", padx=(0, 8))
+
+        self.open_report_button = tk.Button(
+            button_frame,
+            text="Open Detailed Report",
+            command=self._open_detailed_report,
+            state="disabled",
+        )
+        self.open_report_button.pack(side="left", padx=(0, 8))
+
+        self.open_button = tk.Button(button_frame, text="Open Output Dir", command=self._open_output_dir, state="disabled")
+        self.open_button.pack(side="left")
 
         tk.Label(root, textvariable=self.status_var, anchor="w").grid(
             row=4, column=0, columnspan=3, padx=8, pady=8, sticky="ew"
@@ -465,6 +517,8 @@ class ThesisFormatFixerGUI:
             output_text = format_gui_batch_result(batch_result)
             run_success = batch_result.success
             run_error = batch_result.error_text
+            self._last_report_file = None
+            self._last_user_summary_file = None
         else:
             single_result = execute_gui_task(
                 input_file=input_path,
@@ -474,11 +528,34 @@ class ThesisFormatFixerGUI:
             output_text = format_gui_result(single_result)
             run_success = single_result.success
             run_error = single_result.error_text
+            artifacts = single_result.payload.get("artifacts", {})
+            self._last_report_file = None
+            self._last_user_summary_file = None
+            if isinstance(artifacts, dict):
+                report_md = artifacts.get("report_md")
+                report_json = artifacts.get("report_json")
+                user_summary_md = artifacts.get("user_summary_md")
+                if isinstance(report_md, str) and report_md.strip():
+                    path = Path(report_md)
+                    if path.exists():
+                        self._last_report_file = path
+                if self._last_report_file is None and isinstance(report_json, str) and report_json.strip():
+                    path = Path(report_json)
+                    if path.exists():
+                        self._last_report_file = path
+                if isinstance(user_summary_md, str) and user_summary_md.strip():
+                    path = Path(user_summary_md)
+                    if path.exists():
+                        self._last_user_summary_file = path
 
         self.result_text.delete("1.0", "end")
         self.result_text.insert("1.0", output_text)
         self._last_output_dir = output_dir
         self.open_button.config(state="normal" if output_dir.exists() else "disabled")
+        self.open_report_button.config(state="normal" if self._last_report_file is not None else "disabled")
+        self.open_user_summary_button.config(
+            state="normal" if self._last_user_summary_file is not None else "disabled"
+        )
         if run_success:
             self.status_var.set(f"Completed. Output saved in: {output_dir}")
         else:
@@ -496,6 +573,28 @@ class ThesisFormatFixerGUI:
         except Exception as exc:  # pragma: no cover - platform dependent
             if messagebox is not None:
                 messagebox.showerror("Open Directory Failed", str(exc))
+            else:
+                self.status_var.set(str(exc))
+
+    def _open_detailed_report(self) -> None:
+        if self._last_report_file is None:
+            return
+        try:
+            open_file(self._last_report_file)
+        except Exception as exc:  # pragma: no cover - platform dependent
+            if messagebox is not None:
+                messagebox.showerror("Open Report Failed", str(exc))
+            else:
+                self.status_var.set(str(exc))
+
+    def _open_user_summary(self) -> None:
+        if self._last_user_summary_file is None:
+            return
+        try:
+            open_file(self._last_user_summary_file)
+        except Exception as exc:  # pragma: no cover - platform dependent
+            if messagebox is not None:
+                messagebox.showerror("Open User Summary Failed", str(exc))
             else:
                 self.status_var.set(str(exc))
 

@@ -138,7 +138,14 @@ class UserSummaryTopAction:
 
 @dataclass(frozen=True, slots=True)
 class UserResultSummary:
+    processing_type: str
     overall_status: str
+    auto_fixed_count: int
+    detected_not_auto_modified_count: int
+    manual_review_required_count: int
+    reference_reminder_count: int
+    key_issues: tuple[str, ...]
+    next_steps: tuple[str, ...]
     auto_fixed_items: tuple[UserSummaryItem, ...]
     detected_but_not_fixed_items: tuple[UserSummaryItem, ...]
     manual_review_items: tuple[UserSummaryItem, ...]
