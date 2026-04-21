@@ -139,7 +139,7 @@ def format_gui_result(result: GuiExecutionResult) -> str:
     artifacts = result.payload.get("artifacts", {}) if isinstance(result.payload, dict) else {}
     processing_label = "修复" if result.mode == "fix" else "检查"
     lines = [
-        "中文结果面板",
+        "GUI 用户版结果面板",
         f"- 本次处理类型：{processing_label}",
         f"- 输入文件：{result.input_file}",
         f"- 输出目录：{result.output_dir}",
@@ -163,6 +163,8 @@ def format_gui_result(result: GuiExecutionResult) -> str:
                 ),
                 f"- 需要人工复核数量：{user_summary.get('manual_review_required_count', summary.get('manual_review_required_count', 0))}",
                 f"- 参考文献相关提醒数量：{user_summary.get('reference_reminder_count', summary.get('reference_finding_count', 0))}",
+                f"- 脚注相关提醒数量：{user_summary.get('footnote_reminder_count', 0)}",
+                f"- 其他提示数量：{user_summary.get('other_reminder_count', 0)}",
             ]
         )
         key_issues = user_summary.get("key_issues", [])
@@ -182,16 +184,47 @@ def format_gui_result(result: GuiExecutionResult) -> str:
             + f"- 参考文献相关提醒数量：{summary.get('reference_finding_count', 0)}"
         )
 
-    lines.extend(["", "报告入口"])
-    report_md = artifacts.get("report_md") if isinstance(artifacts, dict) else None
-    report_json = artifacts.get("report_json") if isinstance(artifacts, dict) else None
+    lines.extend(["", "文件出口"])
+    fixed_docx = artifacts.get("fixed_docx") if isinstance(artifacts, dict) else None
+    report_md = artifacts.get("technical_report_md") if isinstance(artifacts, dict) else None
+    report_json = artifacts.get("technical_report_json") if isinstance(artifacts, dict) else None
+    if not report_md and isinstance(artifacts, dict):
+        report_md = artifacts.get("report_md")
+    if not report_json and isinstance(artifacts, dict):
+        report_json = artifacts.get("report_json")
     user_summary_md = artifacts.get("user_summary_md") if isinstance(artifacts, dict) else None
+    if isinstance(fixed_docx, str) and fixed_docx.strip():
+        lines.append(f"- 修复后 docx：{fixed_docx}")
     if isinstance(report_md, str) and report_md.strip():
-        lines.append(f"- 查看详细报告（Markdown）：{report_md}")
+        lines.append(f"- 技术版报告（Markdown）：{report_md}")
     if isinstance(report_json, str) and report_json.strip():
-        lines.append(f"- 查看详细报告（JSON）：{report_json}")
+        lines.append(f"- 技术版报告（JSON）：{report_json}")
     if isinstance(user_summary_md, str) and user_summary_md.strip():
-        lines.append(f"- 打开用户版摘要：{user_summary_md}")
+        lines.append(f"- 用户版摘要文件：{user_summary_md}")
+
+    technical_summary = user_summary.get("technical_summary", {}) if isinstance(user_summary, dict) else {}
+    if isinstance(technical_summary, dict) and technical_summary:
+        lines.extend(["", "技术字段（次级展示）"])
+        for key in (
+            "auto_fix_rule_count",
+            "detected_not_auto_modified_count",
+            "manual_review_required_count",
+            "reference_finding_count",
+            "reference_blocking_count",
+            "block_low_confidence_count",
+        ):
+            lines.append(f"- {key}: {technical_summary.get(key, summary.get(key, 0))}")
+    elif isinstance(summary, dict) and summary:
+        lines.extend(["", "技术字段（次级展示）"])
+        for key in (
+            "auto_fix_rule_count",
+            "detected_not_auto_modified_count",
+            "manual_review_required_count",
+            "reference_finding_count",
+            "reference_blocking_count",
+            "block_low_confidence_count",
+        ):
+            lines.append(f"- {key}: {summary.get(key, 0)}")
 
     lines.extend(["", "本次产物文件"])
     if result.generated_files:
@@ -343,14 +376,14 @@ def sys_platform_is_macos() -> bool:
 class ThesisFormatFixerGUI:
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("Thesis Format Fixer - Minimal GUI")
+        self.root.title("论文格式检查修复工具 - GUI 用户版")
         self.root.geometry("860x600")
 
         self.input_var = tk.StringVar()
         self.output_var = tk.StringVar()
         self.mode_var = tk.StringVar(value="check")
-        self.input_label_var = tk.StringVar(value="Input .docx")
-        self.status_var = tk.StringVar(value="Ready")
+        self.input_label_var = tk.StringVar(value="输入 .docx")
+        self.status_var = tk.StringVar(value="就绪")
         self._last_output_dir: Path | None = None
         self._last_report_file: Path | None = None
         self._last_user_summary_file: Path | None = None
@@ -364,32 +397,32 @@ class ThesisFormatFixerGUI:
 
         tk.Label(root, textvariable=self.input_label_var).grid(row=0, column=0, padx=8, pady=8, sticky="w")
         tk.Entry(root, textvariable=self.input_var).grid(row=0, column=1, padx=8, pady=8, sticky="ew")
-        tk.Button(root, text="Browse", command=self._pick_input).grid(row=0, column=2, padx=8, pady=8)
+        tk.Button(root, text="浏览", command=self._pick_input).grid(row=0, column=2, padx=8, pady=8)
 
-        tk.Label(root, text="Output Dir").grid(row=1, column=0, padx=8, pady=8, sticky="w")
+        tk.Label(root, text="输出目录").grid(row=1, column=0, padx=8, pady=8, sticky="w")
         tk.Entry(root, textvariable=self.output_var).grid(row=1, column=1, padx=8, pady=8, sticky="ew")
-        tk.Button(root, text="Browse", command=self._pick_output_dir).grid(row=1, column=2, padx=8, pady=8)
+        tk.Button(root, text="浏览", command=self._pick_output_dir).grid(row=1, column=2, padx=8, pady=8)
 
-        tk.Label(root, text="Mode").grid(row=2, column=0, padx=8, pady=8, sticky="w")
+        tk.Label(root, text="处理模式").grid(row=2, column=0, padx=8, pady=8, sticky="w")
         mode_frame = tk.Frame(root)
         mode_frame.grid(row=2, column=1, padx=8, pady=8, sticky="w")
         tk.Radiobutton(
             mode_frame,
-            text="check",
+            text="仅检查",
             variable=self.mode_var,
             value="check",
             command=self._on_mode_changed,
         ).pack(side="left")
         tk.Radiobutton(
             mode_frame,
-            text="fix",
+            text="检查并修复",
             variable=self.mode_var,
             value="fix",
             command=self._on_mode_changed,
         ).pack(side="left")
         tk.Radiobutton(
             mode_frame,
-            text="batch-fix",
+            text="批量修复",
             variable=self.mode_var,
             value="batch-fix",
             command=self._on_mode_changed,
@@ -397,7 +430,7 @@ class ThesisFormatFixerGUI:
 
         button_frame = tk.Frame(root)
         button_frame.grid(row=3, column=1, columnspan=2, padx=8, pady=8, sticky="ew")
-        self.run_button = tk.Button(button_frame, text="Execute", command=self._execute)
+        self.run_button = tk.Button(button_frame, text="开始执行", command=self._execute)
         self.run_button.pack(side="left", padx=(0, 8))
 
         self.open_user_summary_button = tk.Button(
@@ -418,13 +451,13 @@ class ThesisFormatFixerGUI:
 
         self.open_report_button = tk.Button(
             button_frame,
-            text="Open Detailed Report",
+            text="打开技术报告",
             command=self._open_detailed_report,
             state="disabled",
         )
         self.open_report_button.pack(side="left", padx=(0, 8))
 
-        self.open_button = tk.Button(button_frame, text="Open Output Dir", command=self._open_output_dir, state="disabled")
+        self.open_button = tk.Button(button_frame, text="打开输出目录", command=self._open_output_dir, state="disabled")
         self.open_button.pack(side="left")
 
         tk.Label(root, textvariable=self.status_var, anchor="w").grid(
@@ -455,11 +488,11 @@ class ThesisFormatFixerGUI:
     def _on_mode_changed(self) -> None:
         mode = self.mode_var.get()
         if mode == "batch-fix":
-            self.input_label_var.set("Input Dir")
-            self.status_var.set("Batch mode: choose an input directory containing .docx files.")
+            self.input_label_var.set("输入目录")
+            self.status_var.set("批量模式：请选择包含 .docx 的输入目录。")
         else:
-            self.input_label_var.set("Input .docx")
-            self.status_var.set("Single-file mode: choose one .docx file.")
+            self.input_label_var.set("输入 .docx")
+            self.status_var.set("单文件模式：请选择一个 .docx 文件。")
 
     def _set_user_summary_action_state(self) -> None:
         summary_available = self._last_user_summary_file is not None and self._last_user_summary_file.exists()
@@ -471,7 +504,7 @@ class ThesisFormatFixerGUI:
         try:
             output_dir.mkdir(parents=True, exist_ok=True)
         except OSError:
-            return False, f"Output directory cannot be created: {output_dir}"
+            return False, f"输出目录不可创建: {output_dir}"
 
         probe: Path | None = None
         try:
@@ -483,7 +516,7 @@ class ThesisFormatFixerGUI:
             ) as handle:
                 probe = Path(handle.name)
         except OSError:
-            return False, f"Output directory is not writable: {output_dir}"
+            return False, f"输出目录不可写: {output_dir}"
         finally:
             if probe is not None and probe.exists():
                 probe.unlink(missing_ok=True)
@@ -494,30 +527,30 @@ class ThesisFormatFixerGUI:
         output_value = self.output_var.get().strip()
         mode = self.mode_var.get().strip().lower()
         if not input_value:
-            self.status_var.set("Please select input path.")
+            self.status_var.set("请选择输入路径。")
             return None
         if not output_value:
-            self.status_var.set("Please select output directory.")
+            self.status_var.set("请选择输出目录。")
             return None
         input_path = Path(input_value)
         output_dir = Path(output_value)
         output_ok, output_error = self._ensure_output_dir_writable(output_dir)
         if not output_ok:
-            self.status_var.set(output_error or "Output directory is not writable.")
+            self.status_var.set(output_error or "输出目录不可写。")
             return None
         if mode == "batch-fix":
             if not input_path.exists() or not input_path.is_dir():
-                self.status_var.set("Input path must be an existing directory for batch-fix")
+                self.status_var.set("批量修复模式下，输入路径必须是已存在目录。")
                 return None
             return input_path, output_dir, mode
         if not input_path.exists():
-            self.status_var.set("Input file does not exist.")
+            self.status_var.set("输入文件不存在。")
             return None
         if input_path.is_dir():
-            self.status_var.set("Input path must be a .docx file.")
+            self.status_var.set("输入路径必须是 .docx 文件。")
             return None
         if input_path.suffix.lower() != ".docx":
-            self.status_var.set("Input file must be .docx")
+            self.status_var.set("输入文件必须是 .docx。")
             return None
         return input_path, output_dir, mode
 
@@ -528,7 +561,7 @@ class ThesisFormatFixerGUI:
 
         input_path, output_dir, mode = validated
         self.run_button.config(state="disabled")
-        self.status_var.set("Running...")
+        self.status_var.set("正在执行，请稍候...")
         self.root.update_idletasks()
 
         if mode == "batch-fix":

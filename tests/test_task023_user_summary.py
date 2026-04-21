@@ -9,6 +9,9 @@ def _base_payload() -> dict:
             "auto_fix_rule_count": 0,
             "detected_not_auto_modified_count": 0,
             "manual_review_required_count": 0,
+            "reference_finding_count": 0,
+            "reference_blocking_count": 0,
+            "block_low_confidence_count": 0,
         },
         "sections": {
             "auto_fixed": [],
@@ -30,6 +33,7 @@ def test_user_summary_contains_auto_fixed_section_when_auto_fix_exists() -> None
     assert "中文摘要标题文本为摘 要" in md
     assert "已处理" in md
     assert "本次处理类型" in md
+    assert "## 技术字段（次级）" in md
 
 
 def test_user_summary_contains_detected_not_fixed_section() -> None:
@@ -49,6 +53,7 @@ def test_user_summary_contains_detected_not_fixed_section() -> None:
     assert "## 发现但未自动修改" in md
     assert "未自动修改" in md
     assert "原因：" in md
+    assert "## 其他提示" in md
 
 
 def test_user_summary_contains_manual_review_section() -> None:
@@ -67,6 +72,7 @@ def test_user_summary_contains_manual_review_section() -> None:
     assert "## 建议优先人工检查" in md
     assert "脚注按页重编编号" in md
     assert "当前版本出于安全边界不自动修改该类问题" in md
+    assert "## 脚注相关" in md
 
 
 def test_user_summary_is_generated_safely_when_no_issues() -> None:
@@ -77,3 +83,4 @@ def test_user_summary_is_generated_safely_when_no_issues() -> None:
     assert "本次未发生可自动修改的问题" in md
     assert "当前没有必须优先人工处理的项" in md
     assert "本次未发现明显格式风险" in md
+    assert "## 参考文献相关" in md

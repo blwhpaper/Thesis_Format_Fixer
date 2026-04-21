@@ -15,6 +15,15 @@ from thesis_format_fixer.contracts.report_types import (
 from thesis_format_fixer.contracts.review_types import IntelligentReviewReport
 from thesis_format_fixer.contracts.rule_types import RuleDecision
 
+TECHNICAL_SUMMARY_KEYS = (
+    "auto_fix_rule_count",
+    "detected_not_auto_modified_count",
+    "manual_review_required_count",
+    "reference_finding_count",
+    "reference_blocking_count",
+    "block_low_confidence_count",
+)
+
 
 @dataclass(frozen=True, slots=True)
 class AClassHitSurface:
@@ -133,6 +142,14 @@ def _build_user_item_from_manual(item: dict[str, Any]) -> UserSummaryItem:
     )
 
 
+def _item_is_reference(item: UserSummaryItem) -> bool:
+    return item.rule_id.startswith("FR-4.11") or "参考文献" in item.issue_title
+
+
+def _item_is_footnote(item: UserSummaryItem) -> bool:
+    return item.rule_id.startswith("FR-4.10") or "脚注" in item.issue_title
+
+
 def build_user_result_summary(
     payload: dict[str, Any],
     *,
@@ -151,6 +168,12 @@ def build_user_result_summary(
     )
     manual_review_items = tuple(
         _build_user_item_from_manual(item) for item in sections.get("manual_review_required", [])
+    )
+    all_user_items = (*auto_fixed_items, *detected_but_not_fixed_items, *manual_review_items)
+    reference_items = tuple(item for item in all_user_items if _item_is_reference(item))
+    footnote_items = tuple(item for item in all_user_items if _item_is_footnote(item))
+    other_tip_items = tuple(
+        item for item in all_user_items if not _item_is_reference(item) and not _item_is_footnote(item)
     )
 
     top_actions: list[UserSummaryTopAction] = []
@@ -184,6 +207,9 @@ def build_user_result_summary(
     detected_not_auto_modified_count = int(summary.get("detected_not_auto_modified_count", 0))
     manual_review_required_count = int(summary.get("manual_review_required_count", 0))
     reference_reminder_count = int(summary.get("reference_finding_count", 0))
+    footnote_reminder_count = len(footnote_items)
+    other_reminder_count = len(other_tip_items)
+    technical_summary = {key: int(summary.get(key, 0)) for key in TECHNICAL_SUMMARY_KEYS}
 
     overall_status = f"已完成{processing_label}，未发现需要你额外处理的问题"
     if manual_review_required_count > 0:
@@ -221,12 +247,18 @@ def build_user_result_summary(
         detected_not_auto_modified_count=detected_not_auto_modified_count,
         manual_review_required_count=manual_review_required_count,
         reference_reminder_count=reference_reminder_count,
+        footnote_reminder_count=footnote_reminder_count,
+        other_reminder_count=other_reminder_count,
         key_issues=tuple(key_issues),
         next_steps=tuple(next_steps),
         auto_fixed_items=auto_fixed_items,
         detected_but_not_fixed_items=detected_but_not_fixed_items,
         manual_review_items=manual_review_items,
+        reference_items=reference_items,
+        footnote_items=footnote_items,
+        other_tip_items=other_tip_items,
         top_actions=tuple(top_actions),
+        technical_summary=technical_summary,
         artifact_paths=artifact_paths,
     )
 
@@ -243,6 +275,8 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
         f"- 检测到但未自动修改数量：{summary.detected_not_auto_modified_count}",
         f"- 需要人工复核数量：{summary.manual_review_required_count}",
         f"- 参考文献相关提醒数量：{summary.reference_reminder_count}",
+        f"- 脚注相关提醒数量：{summary.footnote_reminder_count}",
+        f"- 其他提示数量：{summary.other_reminder_count}",
         "",
         "## 关键问题清单",
         "",
@@ -279,6 +313,27 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
     else:
         lines.append("- 当前没有必须优先人工处理的项。")
 
+    lines.extend(["", "## 参考文献相关", ""])
+    if summary.reference_items:
+        for item in summary.reference_items[:10]:
+            lines.append(f"- {item.issue_title}：{item.issue_description} 建议：{item.next_step}")
+    else:
+        lines.append("- 本次未发现参考文献相关提醒。")
+
+    lines.extend(["", "## 脚注相关", ""])
+    if summary.footnote_items:
+        for item in summary.footnote_items[:10]:
+            lines.append(f"- {item.issue_title}：{item.issue_description} 建议：{item.next_step}")
+    else:
+        lines.append("- 本次未发现脚注相关提醒。")
+
+    lines.extend(["", "## 其他提示", ""])
+    if summary.other_tip_items:
+        for item in summary.other_tip_items[:10]:
+            lines.append(f"- {item.issue_title}：{item.issue_description} 建议：{item.next_step}")
+    else:
+        lines.append("- 当前没有其他提示。")
+
     lines.extend(["", "## 结果文件位置说明", ""])
     for key, path in summary.artifact_paths.items():
         lines.append(f"- {key}: {path}")
@@ -291,5 +346,9 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
         lines.extend(["", "## 优先建议", ""])
         for action in summary.top_actions:
             lines.append(f"- [{action.priority}] {action.title}：{action.reason}")
+
+    lines.extend(["", "## 技术字段（次级）", ""])
+    for key, value in summary.technical_summary.items():
+        lines.append(f"- {key}: {value}")
 
     return "\n".join(lines) + "\n"

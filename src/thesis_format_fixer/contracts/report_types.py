@@ -144,10 +144,16 @@ class UserResultSummary:
     detected_not_auto_modified_count: int
     manual_review_required_count: int
     reference_reminder_count: int
+    footnote_reminder_count: int
+    other_reminder_count: int
     key_issues: tuple[str, ...]
     next_steps: tuple[str, ...]
     auto_fixed_items: tuple[UserSummaryItem, ...]
     detected_but_not_fixed_items: tuple[UserSummaryItem, ...]
     manual_review_items: tuple[UserSummaryItem, ...]
+    reference_items: tuple[UserSummaryItem, ...]
+    footnote_items: tuple[UserSummaryItem, ...]
+    other_tip_items: tuple[UserSummaryItem, ...]
     top_actions: tuple[UserSummaryTopAction, ...]
+    technical_summary: dict[str, int]
     artifact_paths: dict[str, str]

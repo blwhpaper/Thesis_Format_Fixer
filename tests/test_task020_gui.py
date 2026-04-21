@@ -61,7 +61,7 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
         return (
             0,
             {
-                "summary": {"reference_finding_count": 2},
+                "summary": {"reference_finding_count": 2, "block_low_confidence_count": 0},
                 "user_summary": {"overall_status": "已完成", "top_actions": [{"title": "人工复核", "reason": "有未自动修改项"}]},
                 "artifacts": {"user_summary_md": str(user_summary_md)},
             },
@@ -82,10 +82,63 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
     assert len(result.generated_files) == 3
     assert result.error_text is None
     formatted = gui.format_gui_result(result)
-    assert "中文结果面板" in formatted
+    assert "GUI 用户版结果面板" in formatted
     assert "用户版中文摘要" in formatted
     assert "参考文献相关提醒数量" in formatted
-    assert "打开用户版摘要" in formatted
+    assert "用户版摘要文件" in formatted
+    assert "技术字段（次级展示）" in formatted
+
+
+def test_format_gui_result_fix_shows_three_artifact_exits(tmp_path: Path) -> None:
+    input_docx = tmp_path / "demo.docx"
+    output_dir = tmp_path / "out"
+    fixed_docx = output_dir / "demo.fixed.docx"
+    report_md = output_dir / "demo.report.md"
+    report_json = output_dir / "demo.report.json"
+    user_summary_md = output_dir / "demo.user_summary.md"
+    for path in (fixed_docx, report_md, report_json, user_summary_md):
+        _touch(path)
+
+    result = gui.GuiExecutionResult(
+        mode="fix",
+        input_file=input_docx,
+        output_dir=output_dir,
+        success=True,
+        exit_code=0,
+        generated_files=(fixed_docx, report_json, report_md, user_summary_md),
+        payload={
+            "summary": {
+                "auto_fix_rule_count": 1,
+                "detected_not_auto_modified_count": 0,
+                "manual_review_required_count": 0,
+                "reference_finding_count": 0,
+                "reference_blocking_count": 0,
+                "block_low_confidence_count": 0,
+            },
+            "user_summary": {
+                "overall_status": "已完成修复",
+                "technical_summary": {
+                    "auto_fix_rule_count": 1,
+                    "detected_not_auto_modified_count": 0,
+                    "manual_review_required_count": 0,
+                    "reference_finding_count": 0,
+                    "reference_blocking_count": 0,
+                    "block_low_confidence_count": 0,
+                },
+            },
+            "artifacts": {
+                "fixed_docx": str(fixed_docx),
+                "technical_report_md": str(report_md),
+                "technical_report_json": str(report_json),
+                "user_summary_md": str(user_summary_md),
+            },
+        },
+    )
+    formatted = gui.format_gui_result(result)
+    assert "文件出口" in formatted
+    assert "修复后 docx" in formatted
+    assert "技术版报告（Markdown）" in formatted
+    assert "用户版摘要文件" in formatted
 
 
 def test_execute_gui_task_fix_failure_path(tmp_path: Path) -> None:
