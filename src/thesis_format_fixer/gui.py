@@ -1,4 +1,4 @@
-"""Minimal single-file GUI wrapper for thesis-format-fixer."""
+"""PySide6 desktop host for thesis-format-fixer."""
 
 from __future__ import annotations
 
@@ -12,17 +12,63 @@ from pathlib import Path
 from typing import Any, Callable
 
 from thesis_format_fixer.app.runner import run_batch_fix, run_check_with_details, run_fix_with_details
+from thesis_format_fixer.reporters.report_builder import build_user_result_summary, render_user_summary_markdown
 
 try:
-    import tkinter as tk
-    from tkinter import filedialog, messagebox
-except Exception as exc:  # pragma: no cover - environment dependent
-    tk = None
-    filedialog = None
-    messagebox = None
-    _TK_IMPORT_ERROR = exc
+    from PySide6.QtCore import QObject, Qt, QThread, Signal
+    from PySide6.QtGui import QAction, QTextOption
+    from PySide6.QtWidgets import (
+        QApplication,
+        QCheckBox,
+        QComboBox,
+        QFileDialog,
+        QFormLayout,
+        QGroupBox,
+        QHBoxLayout,
+        QLabel,
+        QLineEdit,
+        QListWidget,
+        QListWidgetItem,
+        QMainWindow,
+        QMessageBox,
+        QPushButton,
+        QSizePolicy,
+        QSplitter,
+        QStatusBar,
+        QTextEdit,
+        QVBoxLayout,
+        QWidget,
+    )
+except Exception as exc:  # pragma: no cover - import environment dependent
+    QApplication = None
+    QCheckBox = None
+    QComboBox = None
+    QFileDialog = None
+    QFormLayout = None
+    QGroupBox = None
+    QHBoxLayout = None
+    QLabel = None
+    QLineEdit = None
+    QListWidget = None
+    QListWidgetItem = None
+    QMainWindow = object
+    QMessageBox = None
+    QObject = object
+    QPushButton = None
+    QSizePolicy = None
+    QSplitter = None
+    QStatusBar = None
+    QTextEdit = None
+    QTextOption = None
+    QThread = None
+    Qt = None
+    QVBoxLayout = None
+    QWidget = None
+    QAction = None
+    Signal = None
+    _PYSIDE6_IMPORT_ERROR = exc
 else:
-    _TK_IMPORT_ERROR = None
+    _PYSIDE6_IMPORT_ERROR = None
 
 
 RunnerWithDetails = Callable[..., tuple[int, dict[str, Any], Path | None, Path | None]]
@@ -54,6 +100,73 @@ class GuiBatchExecutionResult:
     items: tuple[dict[str, Any], ...] = ()
     summary_payload: dict[str, Any] = field(default_factory=dict)
     error_text: str | None = None
+
+
+class _DialogBridge:
+    def askopenfilename(self, **kwargs: object) -> str:
+        if QFileDialog is None:
+            return ""
+        parent = kwargs.get("parent")
+        title = str(kwargs.get("title", "选择文件"))
+        filter_spec = "Word Document (*.docx);;All Files (*)"
+        selected, _ = QFileDialog.getOpenFileName(parent, title, "", filter_spec)
+        return selected
+
+    def askdirectory(self, **kwargs: object) -> str:
+        if QFileDialog is None:
+            return ""
+        parent = kwargs.get("parent")
+        title = str(kwargs.get("title", "选择目录"))
+        return QFileDialog.getExistingDirectory(parent, title)
+
+    def asksaveasfilename(self, **kwargs: object) -> str:
+        if QFileDialog is None:
+            return ""
+        parent = kwargs.get("parent")
+        title = str(kwargs.get("title", "导出文件"))
+        initial = str(kwargs.get("initialfile", "result.md"))
+        selected, _ = QFileDialog.getSaveFileName(
+            parent,
+            title,
+            initial,
+            "Markdown (*.md);;All Files (*)",
+        )
+        return selected
+
+
+class _MessageBoxBridge:
+    def showerror(self, title: str, text: str, *, parent: object | None = None) -> None:
+        if QMessageBox is None:
+            return
+        QMessageBox.critical(parent, title, text)
+
+    def showwarning(self, title: str, text: str, *, parent: object | None = None) -> None:
+        if QMessageBox is None:
+            return
+        QMessageBox.warning(parent, title, text)
+
+    def showinformation(self, title: str, text: str, *, parent: object | None = None) -> None:
+        if QMessageBox is None:
+            return
+        QMessageBox.information(parent, title, text)
+
+
+class _StatusVarAdapter:
+    def __init__(self, callback: Callable[[str], None] | None = None) -> None:
+        self._value = ""
+        self._callback = callback
+
+    def set(self, value: str) -> None:
+        self._value = value
+        if self._callback is not None:
+            self._callback(value)
+
+    def get(self) -> str:
+        return self._value
+
+
+filedialog: object | None = _DialogBridge()
+messagebox: object | None = _MessageBoxBridge()
 
 
 def _default_report_paths(input_file: Path, output_dir: Path, mode: str) -> tuple[Path, Path]:
@@ -318,6 +431,7 @@ def format_gui_batch_result(result: GuiBatchExecutionResult) -> str:
         f"- failed: {result.failed}",
         "per_file_status:",
     ]
+
     if result.items:
         for item in result.items:
             lines.append(
@@ -373,322 +487,681 @@ def sys_platform_is_macos() -> bool:
     return os.sys.platform == "darwin"
 
 
-class ThesisFormatFixerGUI:
-    def __init__(self, root: tk.Tk) -> None:
-        self.root = root
-        self.root.title("论文格式检查修复工具 - GUI 用户版")
-        self.root.geometry("860x600")
+def _set_widget_enabled(widget: object | None, enabled: bool) -> None:
+    if widget is None:
+        return
+    if hasattr(widget, "setEnabled"):
+        widget.setEnabled(enabled)  # type: ignore[call-arg]
+        return
+    if hasattr(widget, "config"):
+        widget.config(state="normal" if enabled else "disabled")  # type: ignore[call-arg]
 
-        self.input_var = tk.StringVar()
-        self.output_var = tk.StringVar()
-        self.mode_var = tk.StringVar(value="check")
-        self.input_label_var = tk.StringVar(value="输入 .docx")
-        self.status_var = tk.StringVar(value="就绪")
-        self._last_output_dir: Path | None = None
-        self._last_report_file: Path | None = None
-        self._last_user_summary_file: Path | None = None
 
-        self._build_layout()
+class _GuiActionsMixin:
+    _last_output_dir: Path | None
+    _last_report_file: Path | None
+    _last_user_summary_file: Path | None
+    _artifact_paths: tuple[Path, ...]
+    status_var: _StatusVarAdapter
 
-    def _build_layout(self) -> None:
-        root = self.root
-        root.columnconfigure(1, weight=1)
-        root.rowconfigure(5, weight=1)
+    def _status_parent(self) -> object | None:
+        return self if isinstance(self, object) else None
 
-        tk.Label(root, textvariable=self.input_label_var).grid(row=0, column=0, padx=8, pady=8, sticky="w")
-        tk.Entry(root, textvariable=self.input_var).grid(row=0, column=1, padx=8, pady=8, sticky="ew")
-        tk.Button(root, text="浏览", command=self._pick_input).grid(row=0, column=2, padx=8, pady=8)
-
-        tk.Label(root, text="输出目录").grid(row=1, column=0, padx=8, pady=8, sticky="w")
-        tk.Entry(root, textvariable=self.output_var).grid(row=1, column=1, padx=8, pady=8, sticky="ew")
-        tk.Button(root, text="浏览", command=self._pick_output_dir).grid(row=1, column=2, padx=8, pady=8)
-
-        tk.Label(root, text="处理模式").grid(row=2, column=0, padx=8, pady=8, sticky="w")
-        mode_frame = tk.Frame(root)
-        mode_frame.grid(row=2, column=1, padx=8, pady=8, sticky="w")
-        tk.Radiobutton(
-            mode_frame,
-            text="仅检查",
-            variable=self.mode_var,
-            value="check",
-            command=self._on_mode_changed,
-        ).pack(side="left")
-        tk.Radiobutton(
-            mode_frame,
-            text="检查并修复",
-            variable=self.mode_var,
-            value="fix",
-            command=self._on_mode_changed,
-        ).pack(side="left")
-        tk.Radiobutton(
-            mode_frame,
-            text="批量修复",
-            variable=self.mode_var,
-            value="batch-fix",
-            command=self._on_mode_changed,
-        ).pack(side="left")
-
-        button_frame = tk.Frame(root)
-        button_frame.grid(row=3, column=1, columnspan=2, padx=8, pady=8, sticky="ew")
-        self.run_button = tk.Button(button_frame, text="开始执行", command=self._execute)
-        self.run_button.pack(side="left", padx=(0, 8))
-
-        self.open_user_summary_button = tk.Button(
-            button_frame,
-            text="打开用户版摘要",
-            command=self._open_user_summary,
-            state="disabled",
-        )
-        self.open_user_summary_button.pack(side="left", padx=(0, 8))
-
-        self.export_user_summary_button = tk.Button(
-            button_frame,
-            text="导出用户版摘要",
-            command=self._export_user_summary,
-            state="disabled",
-        )
-        self.export_user_summary_button.pack(side="left", padx=(0, 8))
-
-        self.open_report_button = tk.Button(
-            button_frame,
-            text="打开技术报告",
-            command=self._open_detailed_report,
-            state="disabled",
-        )
-        self.open_report_button.pack(side="left", padx=(0, 8))
-
-        self.open_button = tk.Button(button_frame, text="打开输出目录", command=self._open_output_dir, state="disabled")
-        self.open_button.pack(side="left")
-
-        tk.Label(root, textvariable=self.status_var, anchor="w").grid(
-            row=4, column=0, columnspan=3, padx=8, pady=8, sticky="ew"
-        )
-
-        self.result_text = tk.Text(root, wrap="word")
-        self.result_text.grid(row=5, column=0, columnspan=3, padx=8, pady=8, sticky="nsew")
-
-    def _pick_input(self) -> None:
-        assert filedialog is not None
-        if self.mode_var.get() == "batch-fix":
-            path = filedialog.askdirectory(title="Select Input Directory")
-        else:
-            path = filedialog.askopenfilename(
-                title="Select DOCX",
-                filetypes=[("Word Document", "*.docx"), ("All Files", "*.*")],
-            )
-        if path:
-            self.input_var.set(path)
-
-    def _pick_output_dir(self) -> None:
-        assert filedialog is not None
-        path = filedialog.askdirectory(title="Select Output Directory")
-        if path:
-            self.output_var.set(path)
-
-    def _on_mode_changed(self) -> None:
-        mode = self.mode_var.get()
-        if mode == "batch-fix":
-            self.input_label_var.set("输入目录")
-            self.status_var.set("批量模式：请选择包含 .docx 的输入目录。")
-        else:
-            self.input_label_var.set("输入 .docx")
-            self.status_var.set("单文件模式：请选择一个 .docx 文件。")
+    def _set_status_text(self, text: str) -> None:
+        self.status_var.set(text)
 
     def _set_user_summary_action_state(self) -> None:
         summary_available = self._last_user_summary_file is not None and self._last_user_summary_file.exists()
-        state = "normal" if summary_available else "disabled"
-        self.open_user_summary_button.config(state=state)
-        self.export_user_summary_button.config(state=state)
-
-    def _ensure_output_dir_writable(self, output_dir: Path) -> tuple[bool, str | None]:
-        try:
-            output_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            return False, f"输出目录不可创建: {output_dir}"
-
-        probe: Path | None = None
-        try:
-            with tempfile.NamedTemporaryFile(
-                dir=output_dir,
-                prefix=".gui_write_probe_",
-                suffix=".tmp",
-                delete=False,
-            ) as handle:
-                probe = Path(handle.name)
-        except OSError:
-            return False, f"输出目录不可写: {output_dir}"
-        finally:
-            if probe is not None and probe.exists():
-                probe.unlink(missing_ok=True)
-        return True, None
-
-    def _validate_before_run(self) -> tuple[Path, Path, str] | None:
-        input_value = self.input_var.get().strip()
-        output_value = self.output_var.get().strip()
-        mode = self.mode_var.get().strip().lower()
-        if not input_value:
-            self.status_var.set("请选择输入路径。")
-            return None
-        if not output_value:
-            self.status_var.set("请选择输出目录。")
-            return None
-        input_path = Path(input_value)
-        output_dir = Path(output_value)
-        output_ok, output_error = self._ensure_output_dir_writable(output_dir)
-        if not output_ok:
-            self.status_var.set(output_error or "输出目录不可写。")
-            return None
-        if mode == "batch-fix":
-            if not input_path.exists() or not input_path.is_dir():
-                self.status_var.set("批量修复模式下，输入路径必须是已存在目录。")
-                return None
-            return input_path, output_dir, mode
-        if not input_path.exists():
-            self.status_var.set("输入文件不存在。")
-            return None
-        if input_path.is_dir():
-            self.status_var.set("输入路径必须是 .docx 文件。")
-            return None
-        if input_path.suffix.lower() != ".docx":
-            self.status_var.set("输入文件必须是 .docx。")
-            return None
-        return input_path, output_dir, mode
-
-    def _execute(self) -> None:
-        validated = self._validate_before_run()
-        if validated is None:
-            return
-
-        input_path, output_dir, mode = validated
-        self.run_button.config(state="disabled")
-        self.status_var.set("正在执行，请稍候...")
-        self.root.update_idletasks()
-
-        if mode == "batch-fix":
-            batch_result = execute_gui_batch_task(
-                input_dir=input_path,
-                output_dir=output_dir,
-                recursive=True,
-            )
-            output_text = format_gui_batch_result(batch_result)
-            run_success = batch_result.success
-            run_error = batch_result.error_text
-            self._last_report_file = None
-            self._last_user_summary_file = None
-        else:
-            single_result = execute_gui_task(
-                input_file=input_path,
-                output_dir=output_dir,
-                mode=mode,
-            )
-            output_text = format_gui_result(single_result)
-            run_success = single_result.success
-            run_error = single_result.error_text
-            artifacts = single_result.payload.get("artifacts", {})
-            self._last_report_file = None
-            self._last_user_summary_file = None
-            if isinstance(artifacts, dict):
-                report_md = artifacts.get("report_md")
-                report_json = artifacts.get("report_json")
-                user_summary_md = artifacts.get("user_summary_md")
-                if isinstance(report_md, str) and report_md.strip():
-                    path = Path(report_md)
-                    if path.exists():
-                        self._last_report_file = path
-                if self._last_report_file is None and isinstance(report_json, str) and report_json.strip():
-                    path = Path(report_json)
-                    if path.exists():
-                        self._last_report_file = path
-                if isinstance(user_summary_md, str) and user_summary_md.strip():
-                    path = Path(user_summary_md)
-                    if path.exists():
-                        self._last_user_summary_file = path
-
-        self.result_text.delete("1.0", "end")
-        self.result_text.insert("1.0", output_text)
-        self._last_output_dir = output_dir
-        self.open_button.config(state="normal" if output_dir.exists() else "disabled")
-        self.open_report_button.config(state="normal" if self._last_report_file is not None else "disabled")
-        self._set_user_summary_action_state()
-        if run_success:
-            self.status_var.set(f"执行完成。结果已保存到：{output_dir}")
-        else:
-            self.status_var.set("执行失败，请查看下方详细信息。")
-
-        if run_error and messagebox is not None:
-            messagebox.showerror("Execution Error", run_error)
-        self.run_button.config(state="normal")
-
-    def _open_output_dir(self) -> None:
-        if self._last_output_dir is None:
-            return
-        try:
-            open_directory(self._last_output_dir)
-        except Exception as exc:  # pragma: no cover - platform dependent
-            if messagebox is not None:
-                messagebox.showerror("Open Directory Failed", str(exc))
-            else:
-                self.status_var.set(str(exc))
-
-    def _open_detailed_report(self) -> None:
-        if self._last_report_file is None:
-            return
-        try:
-            open_file(self._last_report_file)
-        except Exception as exc:  # pragma: no cover - platform dependent
-            if messagebox is not None:
-                messagebox.showerror("Open Report Failed", str(exc))
-            else:
-                self.status_var.set(str(exc))
+        _set_widget_enabled(getattr(self, "open_user_summary_button", None), summary_available)
+        _set_widget_enabled(getattr(self, "export_user_summary_button", None), summary_available)
 
     def _open_user_summary(self) -> None:
         if self._last_user_summary_file is None:
-            self.status_var.set("当前没有可打开的用户版摘要，请先执行 check 或 fix。")
+            self._set_status_text("当前没有可打开的用户版摘要，请先执行 check 或 fix。")
             return
         try:
             open_file(self._last_user_summary_file)
-            self.status_var.set(f"已打开用户版摘要：{self._last_user_summary_file}")
+            self._set_status_text(f"已打开用户版摘要：{self._last_user_summary_file}")
         except Exception as exc:  # pragma: no cover - platform dependent
             if messagebox is not None:
-                messagebox.showerror("打开用户版摘要失败", str(exc))
+                messagebox.showerror("打开用户版摘要失败", str(exc), parent=self._status_parent())
             else:
-                self.status_var.set(str(exc))
+                self._set_status_text(str(exc))
 
     def _export_user_summary(self) -> None:
         if self._last_user_summary_file is None:
-            self.status_var.set("当前没有可导出的用户版摘要，请先执行 check 或 fix。")
+            self._set_status_text("当前没有可导出的用户版摘要，请先执行 check 或 fix。")
             return
         if filedialog is None:
-            self.status_var.set("当前环境不支持文件对话框，无法导出用户版摘要。")
+            self._set_status_text("当前环境不支持文件对话框，无法导出用户版摘要。")
             return
         target_path_raw = filedialog.asksaveasfilename(
+            parent=self._status_parent(),
             title="导出用户版摘要",
             defaultextension=".md",
             initialfile=self._last_user_summary_file.name,
             filetypes=[("Markdown", "*.md"), ("All Files", "*.*")],
         )
         if not target_path_raw:
-            self.status_var.set("已取消导出用户版摘要。")
+            self._set_status_text("已取消导出用户版摘要。")
             return
         target_path = Path(target_path_raw)
         try:
             exported = export_user_summary_file(self._last_user_summary_file, target_path)
-            self.status_var.set(f"用户版摘要已导出到：{exported}")
+            self._set_status_text(f"用户版摘要已导出到：{exported}")
         except Exception as exc:  # pragma: no cover - platform dependent
             if messagebox is not None:
-                messagebox.showerror("导出用户版摘要失败", str(exc))
+                messagebox.showerror("导出用户版摘要失败", str(exc), parent=self._status_parent())
             else:
-                self.status_var.set(str(exc))
+                self._set_status_text(str(exc))
+
+
+if _PYSIDE6_IMPORT_ERROR is None:
+
+    class _GuiWorker(QObject):
+        finished = Signal(object)
+
+        def __init__(self, *, mode: str, input_path: Path, output_dir: Path, recursive: bool) -> None:
+            super().__init__()
+            self.mode = mode
+            self.input_path = input_path
+            self.output_dir = output_dir
+            self.recursive = recursive
+
+        def run(self) -> None:
+            if self.mode == "batch-fix":
+                result = execute_gui_batch_task(
+                    input_dir=self.input_path,
+                    output_dir=self.output_dir,
+                    recursive=self.recursive,
+                )
+            else:
+                result = execute_gui_task(
+                    input_file=self.input_path,
+                    output_dir=self.output_dir,
+                    mode=self.mode,
+                )
+            self.finished.emit(result)
+
+
+    class ThesisFormatFixerGUI(QMainWindow, _GuiActionsMixin):
+        def __init__(self) -> None:
+            super().__init__()
+            self.setWindowTitle("Thesis Format Fixer")
+            self.resize(1120, 760)
+
+            self.status_var = _StatusVarAdapter(self._on_status_text_changed)
+            self._last_output_dir: Path | None = None
+            self._last_report_file: Path | None = None
+            self._last_user_summary_file: Path | None = None
+            self._artifact_paths: tuple[Path, ...] = ()
+            self._worker_thread: QThread | None = None
+            self._worker: _GuiWorker | None = None
+
+            self._build_window()
+            self._refresh_mode_ui()
+            self._refresh_execute_state()
+            self._set_status_text("请选择输入文件和输出目录。")
+
+        def _status_parent(self) -> object | None:
+            return self
+
+        def _build_window(self) -> None:
+            central = QWidget(self)
+            main_layout = QVBoxLayout(central)
+            main_layout.setContentsMargins(14, 14, 14, 14)
+            main_layout.setSpacing(12)
+
+            main_layout.addWidget(self._build_input_group())
+            main_layout.addWidget(self._build_actions_group())
+            main_layout.addWidget(self._build_results_group(), stretch=1)
+
+            self.setCentralWidget(central)
+            self._build_status_bar()
+            self._build_menu()
+
+        def _build_input_group(self) -> QGroupBox:
+            group = QGroupBox("输入与模式", self)
+            layout = QFormLayout(group)
+
+            self.input_label = QLabel("论文文件", group)
+            self.input_path_edit = QLineEdit(group)
+            self.input_path_edit.setPlaceholderText("选择待检查或修复的 .docx 文件")
+            self.input_path_edit.textChanged.connect(self._refresh_execute_state)
+            input_row = QHBoxLayout()
+            input_row.addWidget(self.input_path_edit)
+            self.input_browse_button = QPushButton("选择输入", group)
+            self.input_browse_button.clicked.connect(self._pick_input)
+            input_row.addWidget(self.input_browse_button)
+            layout.addRow(self.input_label, self._wrap_row(input_row))
+
+            self.output_path_edit = QLineEdit(group)
+            self.output_path_edit.setPlaceholderText("选择输出目录，用于保存报告和修复结果")
+            self.output_path_edit.textChanged.connect(self._refresh_execute_state)
+            output_row = QHBoxLayout()
+            output_row.addWidget(self.output_path_edit)
+            self.output_browse_button = QPushButton("选择输出目录", group)
+            self.output_browse_button.clicked.connect(self._pick_output_dir)
+            output_row.addWidget(self.output_browse_button)
+            layout.addRow("输出目录", self._wrap_row(output_row))
+
+            mode_row = QHBoxLayout()
+            self.mode_combo = QComboBox(group)
+            self.mode_combo.addItem("仅检查", "check")
+            self.mode_combo.addItem("检查并修复", "fix")
+            self.mode_combo.addItem("批量修复（兼容入口）", "batch-fix")
+            self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+            mode_row.addWidget(self.mode_combo)
+            self.recursive_checkbox = QCheckBox("递归扫描子目录", group)
+            self.recursive_checkbox.setChecked(True)
+            self.recursive_checkbox.toggled.connect(self._refresh_execute_state)
+            mode_row.addWidget(self.recursive_checkbox)
+            mode_row.addStretch(1)
+            layout.addRow("处理模式", self._wrap_row(mode_row))
+            return group
+
+        def _build_actions_group(self) -> QGroupBox:
+            group = QGroupBox("操作", self)
+            layout = QHBoxLayout(group)
+
+            self.run_button = QPushButton("开始执行", group)
+            self.run_button.clicked.connect(self._execute)
+            layout.addWidget(self.run_button)
+
+            self.reset_button = QPushButton("重置", group)
+            self.reset_button.clicked.connect(self._reset_form)
+            layout.addWidget(self.reset_button)
+
+            self.open_output_button = QPushButton("打开输出目录", group)
+            self.open_output_button.clicked.connect(self._open_output_dir)
+            layout.addWidget(self.open_output_button)
+
+            self.open_report_button = QPushButton("打开关键报告", group)
+            self.open_report_button.clicked.connect(self._open_detailed_report)
+            layout.addWidget(self.open_report_button)
+
+            self.open_user_summary_button = QPushButton("打开用户摘要", group)
+            self.open_user_summary_button.clicked.connect(self._open_user_summary)
+            layout.addWidget(self.open_user_summary_button)
+
+            self.export_user_summary_button = QPushButton("导出用户摘要", group)
+            self.export_user_summary_button.clicked.connect(self._export_user_summary)
+            layout.addWidget(self.export_user_summary_button)
+
+            layout.addStretch(1)
+            _set_widget_enabled(self.open_output_button, False)
+            _set_widget_enabled(self.open_report_button, False)
+            self._set_user_summary_action_state()
+            return group
+
+        def _build_results_group(self) -> QGroupBox:
+            group = QGroupBox("结果", self)
+            layout = QVBoxLayout(group)
+
+            splitter = QSplitter(Qt.Vertical, group)
+
+            summary_container = QWidget(splitter)
+            summary_layout = QVBoxLayout(summary_container)
+            summary_layout.setContentsMargins(0, 0, 0, 0)
+            summary_layout.addWidget(QLabel("用户版中文摘要", summary_container))
+            self.summary_text = QTextEdit(summary_container)
+            self.summary_text.setReadOnly(True)
+            self.summary_text.setPlaceholderText("执行成功后，这里会优先展示用户可直接阅读的中文摘要。")
+            self.summary_text.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+            summary_layout.addWidget(self.summary_text)
+
+            detail_container = QWidget(splitter)
+            detail_layout = QVBoxLayout(detail_container)
+            detail_layout.setContentsMargins(0, 0, 0, 0)
+            detail_layout.addWidget(QLabel("详细结果 / 日志", detail_container))
+            self.detail_text = QTextEdit(detail_container)
+            self.detail_text.setReadOnly(True)
+            self.detail_text.setPlaceholderText("这里显示详细结果、批处理摘要以及失败时的技术信息。")
+            self.detail_text.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
+            detail_layout.addWidget(self.detail_text, stretch=1)
+
+            detail_layout.addWidget(QLabel("报告与输出文件快捷入口", detail_container))
+            self.artifact_list = QListWidget(detail_container)
+            self.artifact_list.itemDoubleClicked.connect(self._open_selected_artifact)
+            detail_layout.addWidget(self.artifact_list, stretch=1)
+
+            splitter.addWidget(summary_container)
+            splitter.addWidget(detail_container)
+            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(1, 2)
+            layout.addWidget(splitter)
+            return group
+
+        def _build_status_bar(self) -> None:
+            bar = QStatusBar(self)
+            self.setStatusBar(bar)
+            self.status_label = QLabel("就绪", self)
+            self.output_label = QLabel("最近输出：-", self)
+            self.output_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+            bar.addWidget(self.status_label, 1)
+            bar.addPermanentWidget(self.output_label, 1)
+
+        def _build_menu(self) -> None:
+            file_menu = self.menuBar().addMenu("文件")
+            run_action = QAction("开始执行", self)
+            run_action.triggered.connect(self._execute)
+            file_menu.addAction(run_action)
+
+            open_output_action = QAction("打开输出目录", self)
+            open_output_action.triggered.connect(self._open_output_dir)
+            file_menu.addAction(open_output_action)
+
+            exit_action = QAction("退出", self)
+            exit_action.triggered.connect(self.close)
+            file_menu.addAction(exit_action)
+
+        def _wrap_row(self, layout: QHBoxLayout) -> QWidget:
+            container = QWidget(self)
+            container.setLayout(layout)
+            return container
+
+        def _mode(self) -> str:
+            return str(self.mode_combo.currentData())
+
+        def _on_mode_changed(self) -> None:
+            self._refresh_mode_ui()
+            self._refresh_execute_state()
+
+        def _refresh_mode_ui(self) -> None:
+            batch_mode = self._mode() == "batch-fix"
+            self.input_label.setText("输入目录" if batch_mode else "论文文件")
+            self.input_path_edit.setPlaceholderText(
+                "选择包含 .docx 的输入目录" if batch_mode else "选择待检查或修复的 .docx 文件"
+            )
+            self.recursive_checkbox.setVisible(batch_mode)
+            self.input_browse_button.setText("选择目录" if batch_mode else "选择输入")
+
+        def _refresh_execute_state(self) -> None:
+            input_value = self.input_path_edit.text().strip()
+            output_value = self.output_path_edit.text().strip()
+            enabled = bool(input_value and output_value and self._worker_thread is None)
+            _set_widget_enabled(self.run_button, enabled)
+
+        def _pick_input(self) -> None:
+            if filedialog is None:
+                return
+            if self._mode() == "batch-fix":
+                path = filedialog.askdirectory(parent=self, title="选择输入目录")
+            else:
+                path = filedialog.askopenfilename(parent=self, title="选择论文文件")
+            if path:
+                self.input_path_edit.setText(path)
+
+        def _pick_output_dir(self) -> None:
+            if filedialog is None:
+                return
+            path = filedialog.askdirectory(parent=self, title="选择输出目录")
+            if path:
+                self.output_path_edit.setText(path)
+
+        def _ensure_output_dir_writable(self, output_dir: Path) -> tuple[bool, str | None]:
+            try:
+                output_dir.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                return False, f"输出目录不可创建: {output_dir}"
+
+            probe: Path | None = None
+            try:
+                with tempfile.NamedTemporaryFile(
+                    dir=output_dir,
+                    prefix=".gui_write_probe_",
+                    suffix=".tmp",
+                    delete=False,
+                ) as handle:
+                    probe = Path(handle.name)
+            except OSError:
+                return False, f"输出目录不可写: {output_dir}"
+            finally:
+                if probe is not None and probe.exists():
+                    probe.unlink(missing_ok=True)
+            return True, None
+
+        def _validate_before_run(self) -> tuple[Path, Path, str, bool] | None:
+            input_value = self.input_path_edit.text().strip()
+            output_value = self.output_path_edit.text().strip()
+            mode = self._mode()
+
+            if not input_value:
+                self._set_status_text("请先选择输入文件或输入目录。")
+                if messagebox is not None:
+                    messagebox.showwarning("缺少输入", "请先选择输入文件或输入目录。", parent=self)
+                return None
+            if not output_value:
+                self._set_status_text("请先选择输出目录。")
+                if messagebox is not None:
+                    messagebox.showwarning("缺少输出目录", "请先选择输出目录。", parent=self)
+                return None
+
+            input_path = Path(input_value)
+            output_dir = Path(output_value)
+            output_ok, output_error = self._ensure_output_dir_writable(output_dir)
+            if not output_ok:
+                self._set_status_text(output_error or "输出目录不可写。")
+                if messagebox is not None and output_error:
+                    messagebox.showerror("输出目录不可用", output_error, parent=self)
+                return None
+
+            if mode == "batch-fix":
+                if not input_path.exists() or not input_path.is_dir():
+                    text = "批量修复模式下，输入路径必须是已存在目录。"
+                    self._set_status_text(text)
+                    if messagebox is not None:
+                        messagebox.showwarning("输入目录无效", text, parent=self)
+                    return None
+                return input_path, output_dir, mode, self.recursive_checkbox.isChecked()
+
+            if not input_path.exists():
+                text = "输入文件不存在。"
+                self._set_status_text(text)
+                if messagebox is not None:
+                    messagebox.showwarning("输入文件不存在", text, parent=self)
+                return None
+            if input_path.is_dir() or input_path.suffix.lower() != ".docx":
+                text = "请输入有效的 .docx 论文文件。"
+                self._set_status_text(text)
+                if messagebox is not None:
+                    messagebox.showwarning("输入文件无效", text, parent=self)
+                return None
+            return input_path, output_dir, mode, False
+
+        def _set_busy(self, busy: bool) -> None:
+            controls = (
+                self.run_button,
+                self.reset_button,
+                self.input_browse_button,
+                self.output_browse_button,
+                self.mode_combo,
+                self.recursive_checkbox,
+                self.input_path_edit,
+                self.output_path_edit,
+            )
+            for widget in controls:
+                _set_widget_enabled(widget, not busy)
+            if not busy:
+                self._refresh_execute_state()
+
+        def _execute(self) -> None:
+            validated = self._validate_before_run()
+            if validated is None:
+                return
+
+            input_path, output_dir, mode, recursive = validated
+            self._set_busy(True)
+            self.summary_text.clear()
+            self.detail_text.clear()
+            self.artifact_list.clear()
+            self._set_status_text("正在执行，请稍候……")
+            self.output_label.setText(f"最近输出：{output_dir}")
+
+            self._worker_thread = QThread(self)
+            self._worker = _GuiWorker(mode=mode, input_path=input_path, output_dir=output_dir, recursive=recursive)
+            self._worker.moveToThread(self._worker_thread)
+            self._worker_thread.started.connect(self._worker.run)
+            self._worker.finished.connect(self._handle_worker_result)
+            self._worker.finished.connect(self._worker_thread.quit)
+            self._worker.finished.connect(self._worker.deleteLater)
+            self._worker_thread.finished.connect(self._worker_thread.deleteLater)
+            self._worker_thread.finished.connect(self._clear_worker_state)
+            self._worker_thread.start()
+
+        def _clear_worker_state(self) -> None:
+            self._worker = None
+            self._worker_thread = None
+            self._set_busy(False)
+
+        def _handle_worker_result(self, result: object) -> None:
+            if isinstance(result, GuiBatchExecutionResult):
+                self._apply_batch_result(result)
+                return
+            if isinstance(result, GuiExecutionResult):
+                self._apply_single_result(result)
+
+        def _apply_single_result(self, result: GuiExecutionResult) -> None:
+            self.detail_text.setPlainText(format_gui_result(result))
+            self._last_output_dir = result.output_dir
+            self._last_report_file = None
+            self._last_user_summary_file = None
+
+            artifacts = result.payload.get("artifacts", {}) if isinstance(result.payload, dict) else {}
+            self._artifact_paths = self._collect_artifacts(artifacts, result.generated_files)
+            self._populate_artifacts()
+
+            if isinstance(artifacts, dict):
+                self._last_report_file = self._pick_existing_path(
+                    artifacts.get("technical_report_md"),
+                    artifacts.get("report_md"),
+                    artifacts.get("technical_report_json"),
+                    artifacts.get("report_json"),
+                )
+                self._last_user_summary_file = self._pick_existing_path(artifacts.get("user_summary_md"))
+
+            self._set_user_summary_action_state()
+            _set_widget_enabled(self.open_output_button, result.output_dir.exists())
+            _set_widget_enabled(self.open_report_button, self._last_report_file is not None)
+
+            summary_text = self._build_primary_summary_for_single(result)
+            self.summary_text.setPlainText(summary_text)
+            if result.success:
+                self._set_status_text("执行完成。用户摘要已更新。")
+            else:
+                self._set_status_text("执行失败。请先查看中文提示，再根据详细结果排查。")
+                if result.error_text and messagebox is not None:
+                    messagebox.showerror("执行失败", f"本次处理未完成。\n\n{result.error_text}", parent=self)
+
+        def _apply_batch_result(self, result: GuiBatchExecutionResult) -> None:
+            self.detail_text.setPlainText(format_gui_batch_result(result))
+            self._last_output_dir = result.output_dir
+            self._last_report_file = self._pick_existing_path(
+                result.output_dir / "batch_summary.md",
+                result.output_dir / "batch_summary.json",
+            )
+            self._last_user_summary_file = None
+            self._artifact_paths = tuple(
+                path
+                for path in (
+                    result.output_dir / "batch_summary.md",
+                    result.output_dir / "batch_summary.json",
+                )
+                if path.exists()
+            )
+            self._populate_artifacts()
+            self._set_user_summary_action_state()
+            _set_widget_enabled(self.open_output_button, result.output_dir.exists())
+            _set_widget_enabled(self.open_report_button, self._last_report_file is not None)
+
+            lines = [
+                "批量修复已完成",
+                "",
+                f"总文件数：{result.total_files}",
+                f"成功：{result.succeeded}",
+                f"失败：{result.failed}",
+                f"输出目录：{result.output_dir}",
+            ]
+            warning = result.summary_payload.get("warning") if isinstance(result.summary_payload, dict) else None
+            if warning:
+                lines.extend(["", f"提醒：{warning}"])
+            if result.failed > 0:
+                lines.extend(["", "建议：先打开批处理摘要，优先处理失败项。"])
+            else:
+                lines.extend(["", "建议：打开输出目录抽查关键文件和批处理摘要。"])
+            self.summary_text.setPlainText("\n".join(lines))
+
+            if result.success:
+                self._set_status_text("批量修复完成。")
+            else:
+                self._set_status_text("批量修复结束，但存在失败或摘要异常。")
+                if result.error_text and messagebox is not None:
+                    messagebox.showerror("批量修复未完全成功", result.error_text, parent=self)
+
+        def _build_primary_summary_for_single(self, result: GuiExecutionResult) -> str:
+            payload = result.payload if isinstance(result.payload, dict) else {}
+            artifacts = payload.get("artifacts", {}) if isinstance(payload, dict) else {}
+            artifact_paths = {
+                key: value
+                for key, value in (artifacts.items() if isinstance(artifacts, dict) else [])
+                if isinstance(value, str) and value.strip()
+            }
+            user_summary = payload.get("user_summary")
+            if isinstance(user_summary, dict) and user_summary:
+                summary_obj = build_user_result_summary(
+                    payload,
+                    artifact_paths=artifact_paths,
+                    processing_type=result.mode,
+                )
+                return render_user_summary_markdown(summary_obj, payload=payload)
+
+            summary = payload.get("summary", {}) if isinstance(payload, dict) else {}
+            processing_label = "修复" if result.mode == "fix" else "检查"
+            lines = [
+                f"{processing_label}结果摘要",
+                "",
+                f"状态：{'成功' if result.success else '失败'}",
+                f"自动修复数量：{summary.get('auto_fix_rule_count', 0)}",
+                f"检测到但未自动修改数量：{summary.get('detected_not_auto_modified_count', 0)}",
+                f"需要人工复核数量：{summary.get('manual_review_required_count', 0)}",
+                f"参考文献相关提醒数量：{summary.get('reference_finding_count', 0)}",
+            ]
+            if result.mode == "fix":
+                lines.extend(
+                    [
+                        "",
+                        "本次 fix 重点",
+                        f"- 已自动修复：{summary.get('auto_fix_rule_count', 0)} 项",
+                        f"- 检测到异常但未自动修改：{summary.get('detected_not_auto_modified_count', 0)} 项",
+                        f"- 需要人工复核：{summary.get('manual_review_required_count', 0)} 项",
+                    ]
+                )
+            if result.error_text:
+                lines.extend(["", f"失败原因：{result.error_text}"])
+            return "\n".join(lines)
+
+        def _collect_artifacts(self, artifacts: dict[str, Any], generated_files: tuple[Path, ...]) -> tuple[Path, ...]:
+            collected: list[Path] = []
+            if isinstance(artifacts, dict):
+                for key in (
+                    "fixed_docx",
+                    "technical_report_md",
+                    "report_md",
+                    "technical_report_json",
+                    "report_json",
+                    "user_summary_md",
+                ):
+                    value = artifacts.get(key)
+                    if isinstance(value, str) and value.strip():
+                        path = Path(value)
+                        if path.exists() and path not in collected:
+                            collected.append(path)
+            for path in generated_files:
+                if path.exists() and path not in collected:
+                    collected.append(path)
+            return tuple(collected)
+
+        def _populate_artifacts(self) -> None:
+            self.artifact_list.clear()
+            if not self._artifact_paths:
+                return
+            for path in self._artifact_paths:
+                item = QListWidgetItem(path.name)
+                item.setData(Qt.UserRole, str(path))
+                self.artifact_list.addItem(item)
+
+        def _pick_existing_path(self, *candidates: object) -> Path | None:
+            for item in candidates:
+                if isinstance(item, Path):
+                    if item.exists():
+                        return item
+                    continue
+                if isinstance(item, str) and item.strip():
+                    path = Path(item)
+                    if path.exists():
+                        return path
+            return None
+
+        def _open_output_dir(self) -> None:
+            if self._last_output_dir is None:
+                self._set_status_text("当前还没有可打开的输出目录。")
+                return
+            try:
+                open_directory(self._last_output_dir)
+                self._set_status_text(f"已打开输出目录：{self._last_output_dir}")
+            except Exception as exc:  # pragma: no cover - platform dependent
+                if messagebox is not None:
+                    messagebox.showerror("打开输出目录失败", str(exc), parent=self)
+                else:
+                    self._set_status_text(str(exc))
+
+        def _open_detailed_report(self) -> None:
+            if self._last_report_file is None:
+                self._set_status_text("当前还没有可打开的关键报告。")
+                return
+            try:
+                open_file(self._last_report_file)
+                self._set_status_text(f"已打开关键报告：{self._last_report_file}")
+            except Exception as exc:  # pragma: no cover - platform dependent
+                if messagebox is not None:
+                    messagebox.showerror("打开关键报告失败", str(exc), parent=self)
+                else:
+                    self._set_status_text(str(exc))
+
+        def _open_selected_artifact(self, item: QListWidgetItem) -> None:
+            raw_path = item.data(Qt.UserRole)
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                return
+            path = Path(raw_path)
+            try:
+                open_file(path)
+                self._set_status_text(f"已打开文件：{path}")
+            except Exception as exc:  # pragma: no cover - platform dependent
+                if messagebox is not None:
+                    messagebox.showerror("打开文件失败", str(exc), parent=self)
+                else:
+                    self._set_status_text(str(exc))
+
+        def _reset_form(self) -> None:
+            if self._worker_thread is not None:
+                return
+            self.input_path_edit.clear()
+            self.output_path_edit.clear()
+            self.mode_combo.setCurrentIndex(0)
+            self.recursive_checkbox.setChecked(True)
+            self.summary_text.clear()
+            self.detail_text.clear()
+            self.artifact_list.clear()
+            self._last_output_dir = None
+            self._last_report_file = None
+            self._last_user_summary_file = None
+            self._artifact_paths = ()
+            _set_widget_enabled(self.open_output_button, False)
+            _set_widget_enabled(self.open_report_button, False)
+            self._set_user_summary_action_state()
+            self.output_label.setText("最近输出：-")
+            self._set_status_text("已重置。请选择新的输入文件和输出目录。")
+            self._refresh_execute_state()
+
+        def _on_status_text_changed(self, text: str) -> None:
+            self.status_label.setText(text or "就绪")
+
+
+else:
+
+    class ThesisFormatFixerGUI(_GuiActionsMixin):
+        def __init__(self) -> None:
+            raise RuntimeError(f"PySide6 unavailable: {_PYSIDE6_IMPORT_ERROR}")
 
 
 def main() -> int:
-    if _TK_IMPORT_ERROR is not None:
-        raise RuntimeError(f"tkinter unavailable: {_TK_IMPORT_ERROR}")
-    assert tk is not None
-    root = tk.Tk()
-    app = ThesisFormatFixerGUI(root)
-    app.root.mainloop()
-    return 0
+    if _PYSIDE6_IMPORT_ERROR is not None:
+        raise RuntimeError(f"PySide6 unavailable: {_PYSIDE6_IMPORT_ERROR}")
+    assert QApplication is not None
+    app = QApplication.instance() or QApplication([])
+    window = ThesisFormatFixerGUI()
+    window.show()
+    return app.exec()
 
 
 if __name__ == "__main__":

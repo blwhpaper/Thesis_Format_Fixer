@@ -40,6 +40,18 @@ def test_gui_module_importable() -> None:
     assert gui is not None
 
 
+def test_main_raises_clear_error_when_pyside6_is_unavailable() -> None:
+    if gui._PYSIDE6_IMPORT_ERROR is None:
+        return
+
+    try:
+        gui.main()
+    except RuntimeError as exc:
+        assert "PySide6 unavailable" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("expected RuntimeError")
+
+
 def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
     input_docx = tmp_path / "demo.docx"
     input_docx.write_bytes(b"fake")
