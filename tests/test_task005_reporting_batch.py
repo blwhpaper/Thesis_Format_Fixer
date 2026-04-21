@@ -23,8 +23,10 @@ def test_run_fix_writes_docx_and_reports(tmp_path: Path) -> None:
 
     report_json = output_file.with_suffix(".report.json")
     report_md = output_file.with_suffix(".report.md")
+    user_summary_md = output_file.with_suffix(".user_summary.md")
     assert report_json.exists()
     assert report_md.exists()
+    assert user_summary_md.exists()
 
     payload = json.loads(report_json.read_text(encoding="utf-8"))
     assert payload["schema_version"] == "task-006-report-v1"
@@ -56,8 +58,10 @@ def test_run_batch_fix_outputs_per_file_and_summary(tmp_path: Path) -> None:
 
     assert (output_dir / "a.fixed.docx").exists()
     assert (output_dir / "a.report.json").exists()
+    assert (output_dir / "a.user_summary.md").exists()
     assert (output_dir / "nested" / "b.fixed.docx").exists()
     assert (output_dir / "nested" / "b.report.json").exists()
+    assert (output_dir / "nested" / "b.user_summary.md").exists()
 
     summary_json = output_dir / "batch_summary.json"
     summary_md = output_dir / "batch_summary.md"

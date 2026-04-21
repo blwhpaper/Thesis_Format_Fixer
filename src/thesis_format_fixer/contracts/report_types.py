@@ -116,3 +116,31 @@ class ExecutionReport:
     report_only: tuple[RuleExecutionRecord, ...]
     excluded_by_scope: tuple[RuleExecutionRecord, ...]
     intelligent_review: IntelligentReviewReport | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class UserSummaryItem:
+    issue_title: str
+    issue_description: str
+    handling_status: str
+    why_not_auto_fixed: str = ""
+    next_step: str = ""
+    rule_id: str = ""
+    reason_category: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class UserSummaryTopAction:
+    title: str
+    reason: str
+    priority: str = "medium"
+
+
+@dataclass(frozen=True, slots=True)
+class UserResultSummary:
+    overall_status: str
+    auto_fixed_items: tuple[UserSummaryItem, ...]
+    detected_but_not_fixed_items: tuple[UserSummaryItem, ...]
+    manual_review_items: tuple[UserSummaryItem, ...]
+    top_actions: tuple[UserSummaryTopAction, ...]
+    artifact_paths: dict[str, str]

@@ -22,6 +22,7 @@ from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_surface_docx
 from thesis_format_fixer.io.document_loader import load_document
 from thesis_format_fixer.reporters.report_builder import build_report, summarize_a_class_hit_surface
+from thesis_format_fixer.reporters.report_builder import build_user_result_summary, render_user_summary_markdown
 from thesis_format_fixer.review.reference_checkers import finding_to_payload, run_reference_checks
 from thesis_format_fixer.review.finding_prioritizer import build_reference_review_queue
 from thesis_format_fixer.review.model_adapter import LocalModelAdapter
@@ -54,6 +55,18 @@ def _derive_report_paths(output_docx: Path) -> tuple[Path, Path]:
     report_json = output_docx.with_suffix(".report.json")
     report_md = output_docx.with_suffix(".report.md")
     return report_json, report_md
+
+
+def _derive_user_summary_path(*, report_json: Path | None, report_md: Path | None, input_file: Path) -> Path:
+    if report_md is not None:
+        if report_md.name.endswith(".report.md"):
+            return report_md.with_name(report_md.name[: -len(".report.md")] + ".user_summary.md")
+        return report_md.with_name(report_md.stem + ".user_summary.md")
+    if report_json is not None:
+        if report_json.name.endswith(".report.json"):
+            return report_json.with_name(report_json.name[: -len(".report.json")] + ".user_summary.md")
+        return report_json.with_name(report_json.stem + ".user_summary.md")
+    return input_file.with_name(f"{input_file.stem}.check.user_summary.md")
 
 
 def _ensure_input_docx_file(input_file: Path) -> None:
@@ -714,6 +727,37 @@ def _run_single(
         _write_json(final_json_out, payload)
     if final_md_out is not None:
         _write_markdown(final_md_out, payload)
+
+    user_summary_path = _derive_user_summary_path(
+        report_json=final_json_out,
+        report_md=final_md_out,
+        input_file=input_file,
+    )
+    artifact_paths = {
+        "input_file": str(input_file),
+        "report_json": str(final_json_out) if final_json_out is not None else "(not generated)",
+        "report_md": str(final_md_out) if final_md_out is not None else "(not generated)",
+        "user_summary_md": str(user_summary_path),
+    }
+    user_summary = build_user_result_summary(payload, artifact_paths=artifact_paths)
+    user_summary_md = render_user_summary_markdown(user_summary, payload=payload)
+    user_summary_path.parent.mkdir(parents=True, exist_ok=True)
+    user_summary_path.write_text(user_summary_md, encoding="utf-8")
+    payload["user_summary"] = {
+        "overall_status": user_summary.overall_status,
+        "auto_fixed_items": [asdict(item) for item in user_summary.auto_fixed_items],
+        "detected_but_not_fixed_items": [asdict(item) for item in user_summary.detected_but_not_fixed_items],
+        "manual_review_items": [asdict(item) for item in user_summary.manual_review_items],
+        "top_actions": [asdict(item) for item in user_summary.top_actions],
+        "artifact_paths": dict(user_summary.artifact_paths),
+    }
+    payload["artifacts"] = {
+        "report_json": str(final_json_out) if final_json_out is not None else None,
+        "report_md": str(final_md_out) if final_md_out is not None else None,
+        "user_summary_md": str(user_summary_path),
+    }
+    if final_json_out is not None:
+        _write_json(final_json_out, payload)
 
     return 0, payload, final_json_out, final_md_out
 

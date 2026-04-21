@@ -31,7 +31,18 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
         assert report_md_out is not None
         _touch(report_json_out)
         _touch(report_md_out)
-        return 0, {"summary": {"reference_finding_count": 2}}, report_json_out, report_md_out
+        user_summary_md = output_dir / "demo.check.user_summary.md"
+        _touch(user_summary_md)
+        return (
+            0,
+            {
+                "summary": {"reference_finding_count": 2},
+                "user_summary": {"overall_status": "已完成", "top_actions": [{"title": "人工复核", "reason": "有未自动修改项"}]},
+                "artifacts": {"user_summary_md": str(user_summary_md)},
+            },
+            report_json_out,
+            report_md_out,
+        )
 
     result = gui.execute_gui_task(
         input_file=input_docx,
@@ -43,9 +54,10 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
     assert result.success is True
     assert result.mode == "check"
     assert result.exit_code == 0
-    assert len(result.generated_files) == 2
+    assert len(result.generated_files) == 3
     assert result.error_text is None
     assert "reference_finding_count" in gui.format_gui_result(result)
+    assert "user_summary:" in gui.format_gui_result(result)
 
 
 def test_execute_gui_task_fix_failure_path(tmp_path: Path) -> None:

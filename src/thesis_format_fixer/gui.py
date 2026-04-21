@@ -102,6 +102,11 @@ def execute_gui_task(
                 report_md_out=report_md,
             )
             generated_files.extend([output_docx, report_json, report_md])
+
+        artifacts = payload.get("artifacts", {}) if isinstance(payload, dict) else {}
+        user_summary_path_raw = artifacts.get("user_summary_md") if isinstance(artifacts, dict) else None
+        if isinstance(user_summary_path_raw, str) and user_summary_path_raw.strip():
+            generated_files.append(Path(user_summary_path_raw))
     except Exception as exc:
         return GuiExecutionResult(
             mode=normalized_mode,
@@ -129,6 +134,7 @@ def execute_gui_task(
 
 def format_gui_result(result: GuiExecutionResult) -> str:
     summary = result.payload.get("summary", {})
+    user_summary = result.payload.get("user_summary", {})
     lines = [
         f"mode: {result.mode}",
         f"input_file: {result.input_file}",
@@ -155,6 +161,22 @@ def format_gui_result(result: GuiExecutionResult) -> str:
                 f"- block_low_confidence_count: {summary.get('block_low_confidence_count', 0)}",
             ]
         )
+
+    if isinstance(user_summary, dict) and user_summary:
+        lines.extend(["user_summary:", f"- overall_status: {user_summary.get('overall_status', '')}"])
+        lines.append(
+            "- "
+            + "counts: "
+            + f"auto_fixed={len(user_summary.get('auto_fixed_items', []))} "
+            + f"not_fixed={len(user_summary.get('detected_but_not_fixed_items', []))} "
+            + f"manual={len(user_summary.get('manual_review_items', []))}"
+        )
+        actions = user_summary.get("top_actions", [])
+        if isinstance(actions, list) and actions:
+            first = actions[0] if isinstance(actions[0], dict) else {}
+            lines.append(
+                f"- next_action: {first.get('title', '')} | {first.get('reason', '')}"
+            )
 
     if result.error_text:
         lines.extend(["error:", result.error_text.strip()])
