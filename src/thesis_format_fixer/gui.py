@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -327,6 +328,14 @@ def open_file(path: Path) -> None:
     subprocess.run(["xdg-open", str(path)], check=True)
 
 
+def export_user_summary_file(source: Path, destination: Path) -> Path:
+    if not source.exists():
+        raise FileNotFoundError(f"用户版摘要文件不存在: {source}")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, destination)
+    return destination
+
+
 def sys_platform_is_macos() -> bool:
     return os.sys.platform == "darwin"
 
@@ -393,11 +402,19 @@ class ThesisFormatFixerGUI:
 
         self.open_user_summary_button = tk.Button(
             button_frame,
-            text="Open User Summary",
+            text="打开用户版摘要",
             command=self._open_user_summary,
             state="disabled",
         )
         self.open_user_summary_button.pack(side="left", padx=(0, 8))
+
+        self.export_user_summary_button = tk.Button(
+            button_frame,
+            text="导出用户版摘要",
+            command=self._export_user_summary,
+            state="disabled",
+        )
+        self.export_user_summary_button.pack(side="left", padx=(0, 8))
 
         self.open_report_button = tk.Button(
             button_frame,
@@ -443,6 +460,12 @@ class ThesisFormatFixerGUI:
         else:
             self.input_label_var.set("Input .docx")
             self.status_var.set("Single-file mode: choose one .docx file.")
+
+    def _set_user_summary_action_state(self) -> None:
+        summary_available = self._last_user_summary_file is not None and self._last_user_summary_file.exists()
+        state = "normal" if summary_available else "disabled"
+        self.open_user_summary_button.config(state=state)
+        self.export_user_summary_button.config(state=state)
 
     def _ensure_output_dir_writable(self, output_dir: Path) -> tuple[bool, str | None]:
         try:
@@ -553,13 +576,11 @@ class ThesisFormatFixerGUI:
         self._last_output_dir = output_dir
         self.open_button.config(state="normal" if output_dir.exists() else "disabled")
         self.open_report_button.config(state="normal" if self._last_report_file is not None else "disabled")
-        self.open_user_summary_button.config(
-            state="normal" if self._last_user_summary_file is not None else "disabled"
-        )
+        self._set_user_summary_action_state()
         if run_success:
-            self.status_var.set(f"Completed. Output saved in: {output_dir}")
+            self.status_var.set(f"执行完成。结果已保存到：{output_dir}")
         else:
-            self.status_var.set("Failed. See details below.")
+            self.status_var.set("执行失败，请查看下方详细信息。")
 
         if run_error and messagebox is not None:
             messagebox.showerror("Execution Error", run_error)
@@ -589,12 +610,40 @@ class ThesisFormatFixerGUI:
 
     def _open_user_summary(self) -> None:
         if self._last_user_summary_file is None:
+            self.status_var.set("当前没有可打开的用户版摘要，请先执行 check 或 fix。")
             return
         try:
             open_file(self._last_user_summary_file)
+            self.status_var.set(f"已打开用户版摘要：{self._last_user_summary_file}")
         except Exception as exc:  # pragma: no cover - platform dependent
             if messagebox is not None:
-                messagebox.showerror("Open User Summary Failed", str(exc))
+                messagebox.showerror("打开用户版摘要失败", str(exc))
+            else:
+                self.status_var.set(str(exc))
+
+    def _export_user_summary(self) -> None:
+        if self._last_user_summary_file is None:
+            self.status_var.set("当前没有可导出的用户版摘要，请先执行 check 或 fix。")
+            return
+        if filedialog is None:
+            self.status_var.set("当前环境不支持文件对话框，无法导出用户版摘要。")
+            return
+        target_path_raw = filedialog.asksaveasfilename(
+            title="导出用户版摘要",
+            defaultextension=".md",
+            initialfile=self._last_user_summary_file.name,
+            filetypes=[("Markdown", "*.md"), ("All Files", "*.*")],
+        )
+        if not target_path_raw:
+            self.status_var.set("已取消导出用户版摘要。")
+            return
+        target_path = Path(target_path_raw)
+        try:
+            exported = export_user_summary_file(self._last_user_summary_file, target_path)
+            self.status_var.set(f"用户版摘要已导出到：{exported}")
+        except Exception as exc:  # pragma: no cover - platform dependent
+            if messagebox is not None:
+                messagebox.showerror("导出用户版摘要失败", str(exc))
             else:
                 self.status_var.set(str(exc))
 

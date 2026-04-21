@@ -46,6 +46,10 @@ python -m thesis_format_fixer.gui
 
 GUI 模式支持：`check` / `fix` / `batch-fix`。
 
+单文件 `check` / `fix` 执行完成后，可在 GUI 中直接使用：
+- `打开用户版摘要`：打开本次运行生成的 `*.user_summary.md`。
+- `导出用户版摘要`：将该摘要复制到你指定的位置（可自定义文件名）。
+
 ## 4. 单文件处理流程（GUI/CLI 一致走 runner/report）
 
 1. 选择输入 `.docx`。

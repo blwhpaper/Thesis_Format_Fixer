@@ -11,6 +11,31 @@ def _touch(path: Path) -> None:
     path.write_text("ok", encoding="utf-8")
 
 
+class _FakeVar:
+    def __init__(self) -> None:
+        self.value = ""
+
+    def set(self, value: str) -> None:
+        self.value = value
+
+
+class _FakeButton:
+    def __init__(self) -> None:
+        self.state = "disabled"
+
+    def config(self, *, state: str) -> None:
+        self.state = state
+
+
+def _build_headless_gui() -> gui.ThesisFormatFixerGUI:
+    app = gui.ThesisFormatFixerGUI.__new__(gui.ThesisFormatFixerGUI)
+    app.status_var = _FakeVar()
+    app.open_user_summary_button = _FakeButton()
+    app.export_user_summary_button = _FakeButton()
+    app._last_user_summary_file = None
+    return app
+
+
 def test_gui_module_importable() -> None:
     assert gui is not None
 
@@ -164,3 +189,65 @@ def test_execute_gui_task_raises_for_missing_input_file(tmp_path: Path) -> None:
         assert "输入文件不存在" in str(exc)
     else:  # pragma: no cover - defensive
         raise AssertionError("expected FileNotFoundError")
+
+
+def test_open_user_summary_when_present(monkeypatch, tmp_path: Path) -> None:
+    app = _build_headless_gui()
+    summary_file = tmp_path / "demo.user_summary.md"
+    summary_file.write_text("summary", encoding="utf-8")
+    app._last_user_summary_file = summary_file
+
+    opened: dict[str, Path] = {}
+
+    def _stub_open_file(path: Path) -> None:
+        opened["path"] = path
+
+    monkeypatch.setattr(gui, "open_file", _stub_open_file)
+    app._open_user_summary()
+
+    assert opened["path"] == summary_file
+    assert "已打开用户版摘要" in app.status_var.value
+
+
+def test_export_user_summary_when_present(monkeypatch, tmp_path: Path) -> None:
+    app = _build_headless_gui()
+    source_file = tmp_path / "demo.user_summary.md"
+    source_file.write_text("summary", encoding="utf-8")
+    export_file = tmp_path / "exports" / "copied.user_summary.md"
+    app._last_user_summary_file = source_file
+
+    class _Dialog:
+        @staticmethod
+        def asksaveasfilename(**_kwargs: object) -> str:
+            return str(export_file)
+
+    monkeypatch.setattr(gui, "filedialog", _Dialog())
+    app._export_user_summary()
+
+    assert export_file.exists()
+    assert export_file.read_text(encoding="utf-8") == "summary"
+    assert "用户版摘要已导出到" in app.status_var.value
+
+
+def test_user_summary_actions_show_clear_message_when_missing() -> None:
+    app = _build_headless_gui()
+    app._last_user_summary_file = None
+    app._open_user_summary()
+    assert app.status_var.value == "当前没有可打开的用户版摘要，请先执行 check 或 fix。"
+
+    app._export_user_summary()
+    assert app.status_var.value == "当前没有可导出的用户版摘要，请先执行 check 或 fix。"
+
+
+def test_user_summary_action_buttons_state_sync(tmp_path: Path) -> None:
+    app = _build_headless_gui()
+    app._set_user_summary_action_state()
+    assert app.open_user_summary_button.state == "disabled"
+    assert app.export_user_summary_button.state == "disabled"
+
+    summary_file = tmp_path / "demo.user_summary.md"
+    summary_file.write_text("ok", encoding="utf-8")
+    app._last_user_summary_file = summary_file
+    app._set_user_summary_action_state()
+    assert app.open_user_summary_button.state == "normal"
+    assert app.export_user_summary_button.state == "normal"
