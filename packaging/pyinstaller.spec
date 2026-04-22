@@ -10,8 +10,12 @@ project_root = Path.cwd().resolve()
 src_root = project_root / "src"
 gui_entry = src_root / "thesis_format_fixer" / "gui.py"
 rules_dir = project_root / "rules"
+resources_dir = project_root / "resources"
+macos_icon_path = resources_dir / "icons" / "macos" / "ThesisFormatFixer.icns"
 
 datas = [(str(rules_dir), "rules")]
+if resources_dir.exists():
+    datas.append((str(resources_dir), "resources"))
 
 a = Analysis(
     [str(gui_entry)],
@@ -55,8 +59,8 @@ if sys.platform == "darwin":
         a.binaries,
         a.datas,
         name="ThesisFormatFixer.app",
-        icon=None,
-        bundle_identifier=None,
+        icon=str(macos_icon_path) if macos_icon_path.exists() else None,
+        bundle_identifier="com.thesisformatfixer.app",
     )
 else:
     coll = COLLECT(

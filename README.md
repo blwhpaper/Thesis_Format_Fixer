@@ -2,7 +2,7 @@
 
 `thesis-format-fixer` 是一个针对英文毕业论文 `.docx` 的格式检查/修复工具。
 
-当前阶段：**TASK-031 双平台真实构建验收与发布问题修补**。
+当前阶段：**TASK-035 macOS 发布验收、图标资源与分发说明收口**。
 
 ## 1. 开发环境安装
 
@@ -34,6 +34,7 @@ thesis-format-fixer-gui
 ```
 
 GUI 默认会把输出目录预填为 `~/ThesisFormatFixerOutput`；你也可以在界面中改为任意可写目录。
+macOS 下源码运行与 `.app` bundle 运行现在共用同一份应用名与图标资源，窗口标题统一为 `Thesis Format Fixer`。
 
 ## 3. CLI 用法
 
@@ -121,10 +122,14 @@ chmod +x scripts/build_macos.sh
 默认产物：
 
 - `dist/ThesisFormatFixer.app`
+- `dist/ThesisFormatFixer-macOS-unsigned.zip`
 - 构建脚本默认把 PyInstaller 缓存写到项目内 `.pyinstaller/`，避免受用户目录全局缓存权限影响
 - 构建脚本会在完成后立即检查 `dist/ThesisFormatFixer.app/Contents/Resources/rules`
+- 构建脚本会额外检查 `dist/ThesisFormatFixer.app/Contents/Resources/ThesisFormatFixer.icns`
+- `resources/icons/macos/ThesisFormatFixer.icns` 已接入 PyInstaller bundle 图标与 GUI 运行时图标
 - 2026-04-22 已在 macOS 环境真实构建并成功启动一次 `.app`
-- macOS 主交付入口为 `.app`；仓库中的 `.command` 仅保留为开发/排障辅助入口
+- macOS 主交付入口为 `.app`；对外试用分发优先使用 `dist/ThesisFormatFixer-macOS-unsigned.zip`
+- 仓库中的 `.command` 仅保留为开发/排障辅助入口
 
 ### Windows
 
@@ -143,31 +148,53 @@ scripts\build_windows.bat
 - PyInstaller 配置文件：`packaging/pyinstaller.spec`
 - 打包入口：`src/thesis_format_fixer/gui.py`
 - macOS `.app` 会把 `rules/` 打进 `Contents/Resources/rules`
+- macOS `.app` 会把图标资源打进 `Contents/Resources/resources/icons/macos/`
 - 源码运行、PyInstaller frozen 运行、macOS `.app` bundle 运行共用同一套规则定位逻辑
+- 源码运行、PyInstaller frozen 运行、macOS `.app` bundle 运行共用同一套图标定位逻辑
 - GUI 默认输出目录位于用户主目录下，避免把结果写回临时解包目录或应用 bundle 内部
-- Windows 产物为单个 `exe`；macOS 产物为 `.app`
+- Windows 产物为单个 `exe`；macOS 产物为 `.app` 与配套试用分发 zip
 - 当前真实验收结论：
   - macOS：已真实完成 `pip install`、PyInstaller 构建、`.app` 启动
   - Windows：未真实构建，不能宣称已验收
 
 ## 6. 发布说明
 
-当前发布闭环为“本地构建后直接分发压缩包 / app / exe”：
+当前发布闭环为“本地构建后直接分发 `.app` / `.zip` / `exe`”，不做 Mac App Store 上架：
 
-- macOS：分发 `dist/ThesisFormatFixer.app`
+- macOS 未签名试用分发：
+  - 主构建产物：`dist/ThesisFormatFixer.app`
+  - 推荐对外发送：`dist/ThesisFormatFixer-macOS-unsigned.zip`
+  - 首次打开时，目标机器可能出现“无法验证开发者”或类似 Gatekeeper 提示；可按 [docs/MACOS_DISTRIBUTION_GUIDE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/MACOS_DISTRIBUTION_GUIDE.md) 的“未签名试用”流程处理
+- macOS 正式签名分发：
+  - 先对 `dist/ThesisFormatFixer.app` 做 Developer ID 签名与公证
+  - 建议正式发布命名：`ThesisFormatFixer-macOS-signed.zip` 或 `ThesisFormatFixer-macOS-notarized.zip`
+  - 详细步骤见 [docs/MACOS_DISTRIBUTION_GUIDE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/MACOS_DISTRIBUTION_GUIDE.md)
 - Windows：分发 `dist\ThesisFormatFixer.exe`
 - `.command` 不再作为 macOS 主交付入口，仅用于开发环境下从源码树快速启动 GUI
 - README 中保留源码运行方式，便于开发与验收
-- 本轮不包含商店分发、自动更新、签名、公证和安装器美化
+- 本轮不包含商店分发、自动更新和安装器美化
+
+对非技术试用用户，推荐直接提供：
+
+- `ThesisFormatFixer-macOS-unsigned.zip`
+- 一段简短说明：
+  - 解压后双击 `ThesisFormatFixer.app`
+  - 若系统拦截，到“系统设置 -> 隐私与安全性”中允许打开，再重试
+  - 输出默认写入 `~/ThesisFormatFixerOutput`
 
 建议发布前最少执行：
 
 - `pytest tests/test_smoke.py tests/test_task020_gui.py tests/test_task023_user_summary.py`
-- 在目标平台手工启动一次 GUI，确认窗口可打开、可选择输入、可写出结果
+- 在目标平台手工启动一次 GUI，确认窗口可打开、Dock/Finder 图标正常、可选择输入、可写出结果
 - Windows 发布前必须在真实 Windows 环境至少补做一次：
   - `pip install -r requirements.txt`
   - `scripts\build_windows.bat`
   - 启动 `dist\ThesisFormatFixer.exe`
+
+macOS 发布与验收文档：
+
+- [docs/TASK-035_MACOS_RELEASE_ACCEPTANCE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/TASK-035_MACOS_RELEASE_ACCEPTANCE.md)
+- [docs/MACOS_DISTRIBUTION_GUIDE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/MACOS_DISTRIBUTION_GUIDE.md)
 
 ## 7. 单文件处理流程（GUI/CLI 一致走 runner/report）
 
