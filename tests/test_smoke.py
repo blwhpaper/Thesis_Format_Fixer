@@ -7,7 +7,7 @@ from pathlib import Path
 
 from thesis_format_fixer.app.runner import run_check
 from thesis_format_fixer.io.rulebook import resolve_rulebook_path
-from thesis_format_fixer.runtime_paths import default_output_dir, runtime_root, runtime_rules_dir
+from thesis_format_fixer.runtime_paths import default_output_dir, resolve_app_icon_path, runtime_root, runtime_rules_dir
 
 
 def test_package_import() -> None:
@@ -59,11 +59,14 @@ def test_runtime_paths_support_macos_app_bundle(monkeypatch, tmp_path: Path) -> 
     macos_dir = app_root / "Contents" / "MacOS"
     resources_dir = app_root / "Contents" / "Resources"
     bundled_rules = resources_dir / "rules"
+    bundled_icons = resources_dir / "resources" / "icons" / "macos"
     macos_dir.mkdir(parents=True, exist_ok=True)
     bundled_rules.mkdir(parents=True, exist_ok=True)
+    bundled_icons.mkdir(parents=True, exist_ok=True)
     executable = macos_dir / "ThesisFormatFixer"
     executable.write_text("", encoding="utf-8")
     (bundled_rules / "FORMAT_RULEBOOK_v1.md").write_text("bundle rulebook", encoding="utf-8")
+    (bundled_icons / "ThesisFormatFixer.icns").write_text("icon", encoding="utf-8")
 
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     monkeypatch.setattr(sys, "frozen", True, raising=False)
@@ -71,4 +74,5 @@ def test_runtime_paths_support_macos_app_bundle(monkeypatch, tmp_path: Path) -> 
 
     assert runtime_root() == resources_dir
     assert runtime_rules_dir() == bundled_rules
+    assert resolve_app_icon_path() == bundled_icons / "ThesisFormatFixer.icns"
     assert resolve_rulebook_path() == bundled_rules / "FORMAT_RULEBOOK_v1.md"

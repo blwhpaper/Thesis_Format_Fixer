@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 APP_NAME = "ThesisFormatFixer"
+APP_DISPLAY_NAME = "Thesis Format Fixer"
 DEFAULT_OUTPUT_DIRNAME = "ThesisFormatFixerOutput"
 
 
@@ -32,6 +33,26 @@ def runtime_root() -> Path:
 
 def runtime_rules_dir() -> Path:
     return runtime_root() / "rules"
+
+
+def runtime_resources_dir() -> Path:
+    resources_dir = runtime_root() / "resources"
+    if resources_dir.exists():
+        return resources_dir
+    return runtime_root()
+
+
+def resolve_app_icon_path() -> Path | None:
+    candidates = (
+        runtime_resources_dir() / "icons" / "macos" / "ThesisFormatFixer.icns",
+        runtime_resources_dir() / "icons" / "macos" / "ThesisFormatFixer.png",
+        runtime_root() / "ThesisFormatFixer.icns",
+        runtime_root() / "icon-windowed.icns",
+    )
+    for path in candidates:
+        if path.exists():
+            return path
+    return None
 
 
 def default_output_dir() -> Path:

@@ -13,11 +13,11 @@ from typing import Any, Callable
 
 from thesis_format_fixer.app.runner import run_batch_fix, run_check_with_details, run_fix_with_details
 from thesis_format_fixer.reporters.report_builder import build_user_result_summary, render_user_summary_markdown
-from thesis_format_fixer.runtime_paths import default_output_dir
+from thesis_format_fixer.runtime_paths import APP_DISPLAY_NAME, default_output_dir, resolve_app_icon_path
 
 try:
     from PySide6.QtCore import QObject, Qt, QThread, Signal
-    from PySide6.QtGui import QAction, QTextOption
+    from PySide6.QtGui import QAction, QIcon, QTextOption
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -63,6 +63,7 @@ except Exception as exc:  # pragma: no cover - import environment dependent
     QStatusBar = None
     QTextEdit = None
     QTextOption = None
+    QIcon = None
     QThread = None
     Qt = None
     QVBoxLayout = None
@@ -174,6 +175,24 @@ messagebox: object | None = _MessageBoxBridge()
 
 def default_gui_output_dir() -> Path:
     return default_output_dir()
+
+
+def apply_gui_application_metadata(app: object) -> None:
+    if hasattr(app, "setApplicationDisplayName"):
+        app.setApplicationDisplayName(APP_DISPLAY_NAME)  # type: ignore[call-arg]
+    if hasattr(app, "setApplicationName"):
+        app.setApplicationName(APP_DISPLAY_NAME)  # type: ignore[call-arg]
+    if hasattr(app, "setOrganizationName"):
+        app.setOrganizationName("Thesis Format Fixer")  # type: ignore[call-arg]
+
+    icon_path = resolve_app_icon_path()
+    if icon_path is None or QIcon is None or not hasattr(app, "setWindowIcon"):
+        return
+
+    icon = QIcon(str(icon_path))
+    if icon.isNull():
+        return
+    app.setWindowIcon(icon)  # type: ignore[call-arg]
 
 
 def _ensure_gui_output_directory_writable(output_dir: Path) -> None:
@@ -699,8 +718,13 @@ if _PYSIDE6_IMPORT_ERROR is None:
     class ThesisFormatFixerGUI(QMainWindow, _GuiActionsMixin):
         def __init__(self) -> None:
             super().__init__()
-            self.setWindowTitle("Thesis Format Fixer")
+            self.setWindowTitle(APP_DISPLAY_NAME)
             self.resize(1120, 760)
+            icon_path = resolve_app_icon_path()
+            if icon_path is not None and QIcon is not None:
+                icon = QIcon(str(icon_path))
+                if not icon.isNull():
+                    self.setWindowIcon(icon)
 
             self.status_var = _StatusVarAdapter(self._on_status_text_changed)
             self._last_output_dir: Path | None = None
@@ -1594,6 +1618,7 @@ def main() -> int:
         raise RuntimeError(f"PySide6 unavailable: {_PYSIDE6_IMPORT_ERROR}")
     assert QApplication is not None
     app = QApplication.instance() or QApplication([])
+    apply_gui_application_metadata(app)
     window = ThesisFormatFixerGUI()
     window.show()
     return app.exec()
