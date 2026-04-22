@@ -24,6 +24,7 @@ try:
         QComboBox,
         QFileDialog,
         QFormLayout,
+        QGridLayout,
         QGroupBox,
         QHBoxLayout,
         QLabel,
@@ -46,6 +47,7 @@ except Exception as exc:  # pragma: no cover - import environment dependent
     QComboBox = None
     QFileDialog = None
     QFormLayout = None
+    QGridLayout = None
     QGroupBox = None
     QHBoxLayout = None
     QLabel = None
@@ -609,6 +611,7 @@ def _set_widget_enabled(widget: object | None, enabled: bool) -> None:
 class _GuiActionsMixin:
     _last_output_dir: Path | None
     _last_report_file: Path | None
+    _last_fixed_docx_file: Path | None
     _last_user_summary_file: Path | None
     _artifact_paths: tuple[Path, ...]
     status_var: _StatusVarAdapter
@@ -702,6 +705,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.status_var = _StatusVarAdapter(self._on_status_text_changed)
             self._last_output_dir: Path | None = None
             self._last_report_file: Path | None = None
+            self._last_fixed_docx_file: Path | None = None
             self._last_user_summary_file: Path | None = None
             self._artifact_paths: tuple[Path, ...] = ()
             self._worker_thread: QThread | None = None
@@ -719,9 +723,10 @@ if _PYSIDE6_IMPORT_ERROR is None:
         def _build_window(self) -> None:
             central = QWidget(self)
             main_layout = QVBoxLayout(central)
-            main_layout.setContentsMargins(14, 14, 14, 14)
-            main_layout.setSpacing(12)
+            main_layout.setContentsMargins(18, 18, 18, 18)
+            main_layout.setSpacing(14)
 
+            main_layout.addWidget(self._build_header())
             main_layout.addWidget(self._build_input_group())
             main_layout.addWidget(self._build_actions_group())
             main_layout.addWidget(self._build_results_group(), stretch=1)
@@ -729,10 +734,32 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.setCentralWidget(central)
             self._build_status_bar()
             self._build_menu()
+            self._apply_window_style()
+
+        def _build_header(self) -> QWidget:
+            container = QWidget(self)
+            layout = QVBoxLayout(container)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.setSpacing(6)
+
+            title = QLabel("Thesis Format Fixer", container)
+            title.setObjectName("heroTitle")
+            layout.addWidget(title)
+
+            subtitle = QLabel(
+                "按“选择输入 -> 确认模式 -> 开始执行 -> 查看结果与输出文件”的顺序完成检查或修复。",
+                container,
+            )
+            subtitle.setObjectName("heroSubtitle")
+            subtitle.setWordWrap(True)
+            layout.addWidget(subtitle)
+            return container
 
         def _build_input_group(self) -> QGroupBox:
-            group = QGroupBox("输入与模式", self)
+            group = QGroupBox("第 1 步：选择输入与处理方式", self)
             layout = QFormLayout(group)
+            layout.setHorizontalSpacing(12)
+            layout.setVerticalSpacing(12)
 
             self.input_label = QLabel("论文文件", group)
             self.input_path_edit = QLineEdit(group)
@@ -768,45 +795,104 @@ if _PYSIDE6_IMPORT_ERROR is None:
             mode_row.addWidget(self.recursive_checkbox)
             mode_row.addStretch(1)
             layout.addRow("处理模式", self._wrap_row(mode_row))
+
+            self.mode_hint_label = QLabel(group)
+            self.mode_hint_label.setObjectName("modeHintLabel")
+            self.mode_hint_label.setWordWrap(True)
+            layout.addRow("模式说明", self.mode_hint_label)
             return group
 
         def _build_actions_group(self) -> QGroupBox:
-            group = QGroupBox("操作", self)
-            layout = QHBoxLayout(group)
+            group = QGroupBox("第 2 步：执行与查看输出", self)
+            layout = QVBoxLayout(group)
+            layout.setSpacing(10)
+
+            helper = QLabel(
+                "主操作只有“开始执行”；完成后可在下方继续打开修复结果、技术报告、用户摘要或输出目录。",
+                group,
+            )
+            helper.setObjectName("sectionHelper")
+            helper.setWordWrap(True)
+            layout.addWidget(helper)
+
+            primary_row = QHBoxLayout()
+            primary_row.setSpacing(10)
 
             self.run_button = QPushButton("开始执行", group)
+            self.run_button.setObjectName("primaryActionButton")
             self.run_button.clicked.connect(self._execute)
-            layout.addWidget(self.run_button)
+            primary_row.addWidget(self.run_button)
 
             self.reset_button = QPushButton("重置", group)
             self.reset_button.clicked.connect(self._reset_form)
-            layout.addWidget(self.reset_button)
+            primary_row.addWidget(self.reset_button)
+            primary_row.addStretch(1)
+            layout.addLayout(primary_row)
+
+            secondary_row = QHBoxLayout()
+            secondary_row.setSpacing(8)
 
             self.open_output_button = QPushButton("打开输出目录", group)
             self.open_output_button.clicked.connect(self._open_output_dir)
-            layout.addWidget(self.open_output_button)
+            secondary_row.addWidget(self.open_output_button)
+
+            self.open_fixed_docx_button = QPushButton("打开修复后文件", group)
+            self.open_fixed_docx_button.clicked.connect(self._open_fixed_docx)
+            secondary_row.addWidget(self.open_fixed_docx_button)
 
             self.open_report_button = QPushButton("打开关键报告", group)
             self.open_report_button.clicked.connect(self._open_detailed_report)
-            layout.addWidget(self.open_report_button)
+            secondary_row.addWidget(self.open_report_button)
 
-            self.open_user_summary_button = QPushButton("打开摘要文件", group)
+            self.open_user_summary_button = QPushButton("打开用户摘要", group)
             self.open_user_summary_button.clicked.connect(self._open_user_summary)
-            layout.addWidget(self.open_user_summary_button)
+            secondary_row.addWidget(self.open_user_summary_button)
 
             self.export_user_summary_button = QPushButton("导出用户摘要", group)
             self.export_user_summary_button.clicked.connect(self._export_user_summary)
-            layout.addWidget(self.export_user_summary_button)
+            secondary_row.addWidget(self.export_user_summary_button)
 
-            layout.addStretch(1)
+            secondary_row.addStretch(1)
+            layout.addLayout(secondary_row)
             _set_widget_enabled(self.open_output_button, False)
+            _set_widget_enabled(self.open_fixed_docx_button, False)
             _set_widget_enabled(self.open_report_button, False)
             self._set_user_summary_action_state()
             return group
 
         def _build_results_group(self) -> QGroupBox:
-            group = QGroupBox("结果", self)
+            group = QGroupBox("第 3 步：查看结果摘要与输出文件", self)
             layout = QVBoxLayout(group)
+            layout.setSpacing(10)
+
+            overview = QWidget(group)
+            overview_layout = QVBoxLayout(overview)
+            overview_layout.setContentsMargins(0, 0, 0, 0)
+            overview_layout.setSpacing(8)
+
+            self.result_state_label = QLabel("等待执行", overview)
+            self.result_state_label.setObjectName("resultStateLabel")
+            self.result_state_label.setWordWrap(True)
+            overview_layout.addWidget(self.result_state_label)
+
+            metrics_grid = QGridLayout()
+            metrics_grid.setContentsMargins(0, 0, 0, 0)
+            metrics_grid.setHorizontalSpacing(10)
+            metrics_grid.setVerticalSpacing(10)
+            self.auto_fixed_value_label = self._build_metric_card("已自动处理", "0")
+            self.not_fixed_value_label = self._build_metric_card("未自动修改", "0")
+            self.manual_review_value_label = self._build_metric_card("人工复核", "0")
+            metrics_grid.addWidget(self.auto_fixed_value_label.parentWidget(), 0, 0)
+            metrics_grid.addWidget(self.not_fixed_value_label.parentWidget(), 0, 1)
+            metrics_grid.addWidget(self.manual_review_value_label.parentWidget(), 0, 2)
+            overview_layout.addLayout(metrics_grid)
+
+            self.next_step_label = QLabel("执行完成后，这里会直接告诉你最重要的结果和下一步。", overview)
+            self.next_step_label.setObjectName("nextStepLabel")
+            self.next_step_label.setWordWrap(True)
+            overview_layout.addWidget(self.next_step_label)
+
+            layout.addWidget(overview)
 
             splitter = QSplitter(Qt.Vertical, group)
 
@@ -816,7 +902,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             summary_layout.addWidget(QLabel("用户版中文摘要", summary_container))
             self.summary_text = QTextEdit(summary_container)
             self.summary_text.setReadOnly(True)
-            self.summary_text.setPlaceholderText("执行成功后，这里会优先展示用户可直接阅读的中文摘要。")
+            self.summary_text.setPlaceholderText("执行成功后，这里会优先展示面向普通用户的中文摘要。")
             self.summary_text.setWordWrapMode(QTextOption.WrapAtWordBoundaryOrAnywhere)
             summary_layout.addWidget(self.summary_text)
 
@@ -837,10 +923,108 @@ if _PYSIDE6_IMPORT_ERROR is None:
 
             splitter.addWidget(summary_container)
             splitter.addWidget(detail_container)
-            splitter.setStretchFactor(0, 3)
+            splitter.setStretchFactor(0, 2)
             splitter.setStretchFactor(1, 2)
             layout.addWidget(splitter)
             return group
+
+        def _build_metric_card(self, title: str, value: str) -> QLabel:
+            card = QWidget(self)
+            card.setObjectName("metricCard")
+            layout = QVBoxLayout(card)
+            layout.setContentsMargins(12, 10, 12, 10)
+            layout.setSpacing(4)
+
+            title_label = QLabel(title, card)
+            title_label.setObjectName("metricTitleLabel")
+            layout.addWidget(title_label)
+
+            value_label = QLabel(value, card)
+            value_label.setObjectName("metricValueLabel")
+            layout.addWidget(value_label)
+            return value_label
+
+        def _apply_window_style(self) -> None:
+            self.setStyleSheet(
+                """
+                QMainWindow {
+                    background: #f4f1ea;
+                }
+                QGroupBox {
+                    border: 1px solid #d9d2c5;
+                    border-radius: 10px;
+                    margin-top: 12px;
+                    padding: 12px;
+                    background: #fffdf8;
+                    font-weight: 600;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 12px;
+                    padding: 0 4px;
+                }
+                QLabel#heroTitle {
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: #2c241d;
+                }
+                QLabel#heroSubtitle, QLabel#sectionHelper, QLabel#modeHintLabel {
+                    color: #66594c;
+                    line-height: 1.4;
+                }
+                QPushButton {
+                    min-height: 34px;
+                    padding: 6px 14px;
+                }
+                QPushButton#primaryActionButton {
+                    background: #2f6f5e;
+                    color: white;
+                    border: 1px solid #2f6f5e;
+                    border-radius: 8px;
+                    font-weight: 700;
+                    min-width: 132px;
+                }
+                QPushButton#primaryActionButton:disabled {
+                    background: #9db6ad;
+                    border-color: #9db6ad;
+                }
+                QWidget#metricCard {
+                    background: #f7f4ed;
+                    border: 1px solid #e0d9cd;
+                    border-radius: 10px;
+                }
+                QLabel#metricTitleLabel {
+                    color: #7b6a58;
+                }
+                QLabel#metricValueLabel {
+                    font-size: 24px;
+                    font-weight: 700;
+                    color: #2f6f5e;
+                }
+                QLabel#resultStateLabel {
+                    background: #efe7d8;
+                    border: 1px solid #e0d2b8;
+                    border-radius: 8px;
+                    padding: 10px 12px;
+                    color: #4b3e30;
+                    font-weight: 600;
+                }
+                QLabel#nextStepLabel {
+                    color: #4b3e30;
+                    background: #f7f4ed;
+                    border-radius: 8px;
+                    padding: 8px 10px;
+                }
+                QTextEdit, QListWidget, QLineEdit, QComboBox {
+                    background: white;
+                    border: 1px solid #d8d1c6;
+                    border-radius: 8px;
+                }
+                QListWidget::item {
+                    padding: 8px 6px;
+                }
+                """
+            )
 
         def _build_status_bar(self) -> None:
             bar = QStatusBar(self)
@@ -885,6 +1069,12 @@ if _PYSIDE6_IMPORT_ERROR is None:
             )
             self.recursive_checkbox.setVisible(batch_mode)
             self.input_browse_button.setText("选择目录" if batch_mode else "选择输入")
+            if batch_mode:
+                self.mode_hint_label.setText("批量修复会扫描目录中的 .docx，并统一输出批处理摘要与逐文件结果。")
+            elif self._mode() == "fix":
+                self.mode_hint_label.setText("检查并修复会生成修复后文件，同时保留技术报告和用户摘要，适合正式处理。")
+            else:
+                self.mode_hint_label.setText("仅检查不会修改原文档，适合先看风险和确认人工复核项。")
 
         def _refresh_execute_state(self) -> None:
             input_value = self.input_path_edit.text().strip()
@@ -1007,6 +1197,13 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.summary_text.clear()
             self.detail_text.clear()
             self.artifact_list.clear()
+            self._set_result_overview(
+                state_text="正在执行，请稍候……",
+                auto_fixed=0,
+                not_fixed=0,
+                manual_review=0,
+                next_step="处理过程中会生成适合普通用户阅读的摘要，并在完成后集中提供文件入口。",
+            )
             self._set_status_text("正在执行，请稍候……")
             self.output_label.setText(f"最近输出：{output_dir}")
 
@@ -1037,6 +1234,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.detail_text.setPlainText(format_gui_result(result))
             self._last_output_dir = result.output_dir
             self._last_report_file = None
+            self._last_fixed_docx_file = None
             self._last_user_summary_file = None
 
             artifacts = result.payload.get("artifacts", {}) if isinstance(result.payload, dict) else {}
@@ -1044,6 +1242,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self._populate_artifacts()
 
             if isinstance(artifacts, dict):
+                self._last_fixed_docx_file = self._pick_existing_path(artifacts.get("fixed_docx"))
                 self._last_report_file = self._pick_existing_path(
                     artifacts.get("technical_report_md"),
                     artifacts.get("report_md"),
@@ -1054,10 +1253,12 @@ if _PYSIDE6_IMPORT_ERROR is None:
 
             self._set_user_summary_action_state()
             _set_widget_enabled(self.open_output_button, result.output_dir.exists())
+            _set_widget_enabled(self.open_fixed_docx_button, self._last_fixed_docx_file is not None)
             _set_widget_enabled(self.open_report_button, self._last_report_file is not None)
 
             summary_text = self._build_primary_summary_for_single(result)
             self.summary_text.setPlainText(summary_text)
+            self._apply_single_result_overview(result)
             if result.success:
                 self._set_status_text("执行完成。用户摘要已更新。")
             else:
@@ -1068,6 +1269,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
         def _apply_batch_result(self, result: GuiBatchExecutionResult) -> None:
             self.detail_text.setPlainText(format_gui_batch_result(result))
             self._last_output_dir = result.output_dir
+            self._last_fixed_docx_file = None
             self._last_report_file = self._pick_existing_path(
                 result.output_dir / "batch_summary.md",
                 result.output_dir / "batch_summary.json",
@@ -1084,6 +1286,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self._populate_artifacts()
             self._set_user_summary_action_state()
             _set_widget_enabled(self.open_output_button, result.output_dir.exists())
+            _set_widget_enabled(self.open_fixed_docx_button, False)
             _set_widget_enabled(self.open_report_button, self._last_report_file is not None)
 
             lines = [
@@ -1104,6 +1307,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             else:
                 lines.extend(["", "建议：打开输出目录抽查关键文件和批处理摘要。"])
             self.summary_text.setPlainText("\n".join(lines))
+            self._apply_batch_result_overview(result)
 
             if result.success:
                 self._set_status_text("批量修复完成。")
@@ -1156,6 +1360,81 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 lines.extend(["", f"失败原因：{result.error_text}"])
             return "\n".join(lines)
 
+        def _apply_single_result_overview(self, result: GuiExecutionResult) -> None:
+            summary = result.payload.get("summary", {}) if isinstance(result.payload, dict) else {}
+            user_summary = result.payload.get("user_summary", {}) if isinstance(result.payload, dict) else {}
+            auto_fixed = int(user_summary.get("auto_fixed_count", summary.get("auto_fix_rule_count", 0)))
+            not_fixed = int(
+                user_summary.get(
+                    "detected_not_auto_modified_count",
+                    summary.get("detected_not_auto_modified_count", 0),
+                )
+            )
+            manual_review = int(
+                user_summary.get(
+                    "manual_review_required_count",
+                    summary.get("manual_review_required_count", 0),
+                )
+            )
+            overall_status = str(user_summary.get("overall_status", "")).strip()
+            if not overall_status:
+                overall_status = "执行成功。" if result.success else "执行失败。"
+
+            next_step = "建议先阅读上方中文摘要，再按需要打开报告或输出目录。"
+            next_steps = user_summary.get("next_steps", [])
+            if isinstance(next_steps, list) and next_steps:
+                first_step = next((item for item in next_steps if isinstance(item, str) and item.strip()), "")
+                if first_step:
+                    next_step = f"下一步：{first_step}"
+            elif result.error_text:
+                next_step = f"下一步：先根据失败提示排查输入文件、输出目录或详细日志。"
+
+            state_prefix = "本次结果"
+            if result.mode == "fix":
+                state_prefix = "修复结果"
+            elif result.mode == "check":
+                state_prefix = "检查结果"
+            self._set_result_overview(
+                state_text=f"{state_prefix}：{overall_status}",
+                auto_fixed=auto_fixed,
+                not_fixed=not_fixed,
+                manual_review=manual_review,
+                next_step=next_step,
+            )
+
+        def _apply_batch_result_overview(self, result: GuiBatchExecutionResult) -> None:
+            if result.failed > 0:
+                state_text = f"批量修复已完成，但有 {result.failed} 个文件处理失败。"
+                next_step = "下一步：先打开批处理摘要，优先查看失败文件与对应报告。"
+            elif result.total_files == 0:
+                state_text = "批量处理已完成，但当前输入目录中没有可处理的 .docx 文件。"
+                next_step = "下一步：请确认输入目录路径是否正确，并放入待处理论文文件。"
+            else:
+                state_text = f"批量修复已完成，{result.succeeded} 个文件处理成功。"
+                next_step = "下一步：抽查修复后文件，并结合批处理摘要确认是否仍有人工复核项。"
+            self._set_result_overview(
+                state_text=state_text,
+                auto_fixed=result.succeeded,
+                not_fixed=result.failed,
+                manual_review=max(result.total_files - result.succeeded - result.failed, 0),
+                next_step=next_step,
+            )
+
+        def _set_result_overview(
+            self,
+            *,
+            state_text: str,
+            auto_fixed: int,
+            not_fixed: int,
+            manual_review: int,
+            next_step: str,
+        ) -> None:
+            self.result_state_label.setText(state_text)
+            self.auto_fixed_value_label.setText(str(auto_fixed))
+            self.not_fixed_value_label.setText(str(not_fixed))
+            self.manual_review_value_label.setText(str(manual_review))
+            self.next_step_label.setText(next_step)
+
         def _collect_artifacts(self, artifacts: dict[str, Any], generated_files: tuple[Path, ...]) -> tuple[Path, ...]:
             collected: list[Path] = []
             if isinstance(artifacts, dict):
@@ -1182,9 +1461,27 @@ if _PYSIDE6_IMPORT_ERROR is None:
             if not self._artifact_paths:
                 return
             for path in self._artifact_paths:
-                item = QListWidgetItem(path.name)
+                label = self._artifact_label(path)
+                item = QListWidgetItem(f"{label} | {path.name}")
                 item.setData(Qt.UserRole, str(path))
+                item.setToolTip(str(path))
                 self.artifact_list.addItem(item)
+
+        def _artifact_label(self, path: Path) -> str:
+            name = path.name
+            if name == "batch_summary.md":
+                return "批处理摘要"
+            if name == "batch_summary.json":
+                return "批处理数据"
+            if name.endswith(".fixed.docx"):
+                return "修复后文件"
+            if name.endswith(".report.md"):
+                return "技术报告"
+            if name.endswith(".report.json"):
+                return "技术数据"
+            if name.endswith(".user_summary.md"):
+                return "用户摘要"
+            return "输出文件"
 
         def _pick_existing_path(self, *candidates: object) -> Path | None:
             for item in candidates:
@@ -1224,6 +1521,19 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 else:
                     self._set_status_text(str(exc))
 
+        def _open_fixed_docx(self) -> None:
+            if self._last_fixed_docx_file is None:
+                self._set_status_text("当前还没有可打开的修复后文件。")
+                return
+            try:
+                open_file(self._last_fixed_docx_file)
+                self._set_status_text(f"已打开修复后文件：{self._last_fixed_docx_file}")
+            except Exception as exc:  # pragma: no cover - platform dependent
+                if messagebox is not None:
+                    messagebox.showerror("打开修复后文件失败", str(exc), parent=self)
+                else:
+                    self._set_status_text(str(exc))
+
         def _open_selected_artifact(self, item: QListWidgetItem) -> None:
             raw_path = item.data(Qt.UserRole)
             if not isinstance(raw_path, str) or not raw_path.strip():
@@ -1250,12 +1560,21 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.artifact_list.clear()
             self._last_output_dir = None
             self._last_report_file = None
+            self._last_fixed_docx_file = None
             self._last_user_summary_file = None
             self._artifact_paths = ()
             _set_widget_enabled(self.open_output_button, False)
+            _set_widget_enabled(self.open_fixed_docx_button, False)
             _set_widget_enabled(self.open_report_button, False)
             self._set_user_summary_action_state()
             self.output_label.setText("最近输出：-")
+            self._set_result_overview(
+                state_text="等待执行",
+                auto_fixed=0,
+                not_fixed=0,
+                manual_review=0,
+                next_step="执行完成后，这里会直接告诉你最重要的结果和下一步。",
+            )
             self._set_status_text("已重置。请选择新的输入文件；输出目录已恢复为默认路径。")
             self._refresh_execute_state()
 
