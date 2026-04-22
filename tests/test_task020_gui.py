@@ -40,6 +40,12 @@ def test_gui_module_importable() -> None:
     assert gui is not None
 
 
+def test_default_gui_output_dir_uses_stable_user_path() -> None:
+    output_dir = gui.default_gui_output_dir()
+    assert output_dir.is_absolute()
+    assert output_dir.name == "ThesisFormatFixerOutput"
+
+
 def test_main_raises_clear_error_when_pyside6_is_unavailable() -> None:
     if gui._PYSIDE6_IMPORT_ERROR is None:
         return

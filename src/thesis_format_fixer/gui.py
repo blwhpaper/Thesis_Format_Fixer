@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 from thesis_format_fixer.app.runner import run_batch_fix, run_check_with_details, run_fix_with_details
 from thesis_format_fixer.reporters.report_builder import build_user_result_summary, render_user_summary_markdown
+from thesis_format_fixer.runtime_paths import default_output_dir
 
 try:
     from PySide6.QtCore import QObject, Qt, QThread, Signal
@@ -167,6 +168,10 @@ class _StatusVarAdapter:
 
 filedialog: object | None = _DialogBridge()
 messagebox: object | None = _MessageBoxBridge()
+
+
+def default_gui_output_dir() -> Path:
+    return default_output_dir()
 
 
 def _ensure_gui_output_directory_writable(output_dir: Path) -> None:
@@ -703,9 +708,10 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self._worker: _GuiWorker | None = None
 
             self._build_window()
+            self.output_path_edit.setText(str(default_gui_output_dir()))
             self._refresh_mode_ui()
             self._refresh_execute_state()
-            self._set_status_text("请选择输入文件和输出目录。")
+            self._set_status_text("请选择输入文件；输出目录已默认指向用户主目录下的 ThesisFormatFixerOutput。")
 
         def _status_parent(self) -> object | None:
             return self
@@ -895,6 +901,8 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 path = filedialog.askopenfilename(parent=self, title="选择论文文件")
             if path:
                 self.input_path_edit.setText(path)
+                if not self.output_path_edit.text().strip():
+                    self.output_path_edit.setText(str(default_gui_output_dir()))
 
         def _pick_output_dir(self) -> None:
             if filedialog is None:
@@ -1234,7 +1242,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             if self._worker_thread is not None:
                 return
             self.input_path_edit.clear()
-            self.output_path_edit.clear()
+            self.output_path_edit.setText(str(default_gui_output_dir()))
             self.mode_combo.setCurrentIndex(0)
             self.recursive_checkbox.setChecked(True)
             self.summary_text.clear()
@@ -1248,7 +1256,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             _set_widget_enabled(self.open_report_button, False)
             self._set_user_summary_action_state()
             self.output_label.setText("最近输出：-")
-            self._set_status_text("已重置。请选择新的输入文件和输出目录。")
+            self._set_status_text("已重置。请选择新的输入文件；输出目录已恢复为默认路径。")
             self._refresh_execute_state()
 
         def _on_status_text_changed(self, text: str) -> None:
