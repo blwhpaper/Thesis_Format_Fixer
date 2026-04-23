@@ -21,6 +21,13 @@ if [[ ! -d "$BUNDLE_RULES_DIR" ]]; then
   exit 1
 fi
 
+for REQUIRED_RULE in FORMAT_RULEBOOK_v1.md FORMAT_RULEBOOK_v2.md FORMAT_RULEBOOK_v3.md; do
+  if [[ ! -f "$BUNDLE_RULES_DIR/$REQUIRED_RULE" ]]; then
+    echo "Build failed: bundled rulebook missing: $BUNDLE_RULES_DIR/$REQUIRED_RULE" >&2
+    exit 1
+  fi
+done
+
 BUNDLE_ICON="$ROOT_DIR/dist/ThesisFormatFixer.app/Contents/Resources/ThesisFormatFixer.icns"
 if [[ ! -f "$BUNDLE_ICON" ]]; then
   echo "Build failed: bundled macOS icon missing: $BUNDLE_ICON" >&2

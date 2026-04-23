@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import sys
+from pathlib import Path
 
-
-project_root = Path.cwd().resolve()
+project_root = Path(__file__).resolve().parents[1]
 src_root = project_root / "src"
 gui_entry = src_root / "thesis_format_fixer" / "gui.py"
 rules_dir = project_root / "rules"

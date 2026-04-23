@@ -7,7 +7,17 @@ from pathlib import Path
 
 from thesis_format_fixer.app.runner import run_check
 from thesis_format_fixer.io.rulebook import resolve_rulebook_path
-from thesis_format_fixer.runtime_paths import default_output_dir, resolve_app_icon_path, runtime_root, runtime_rules_dir
+from thesis_format_fixer.runtime_paths import (
+    default_logs_dir,
+    default_output_dir,
+    default_reports_dir,
+    default_temp_dir,
+    resolve_app_icon_path,
+    resolve_writable_output_dir,
+    runtime_root,
+    runtime_rules_dir,
+    validate_runtime_rules,
+)
 
 
 def test_package_import() -> None:
@@ -76,3 +86,51 @@ def test_runtime_paths_support_macos_app_bundle(monkeypatch, tmp_path: Path) -> 
     assert runtime_rules_dir() == bundled_rules
     assert resolve_app_icon_path() == bundled_icons / "ThesisFormatFixer.icns"
     assert resolve_rulebook_path() == bundled_rules / "FORMAT_RULEBOOK_v1.md"
+
+
+def test_runtime_output_strategy_helpers(tmp_path: Path) -> None:
+    output_dir = tmp_path / "output"
+    assert default_reports_dir(output_dir) == output_dir
+    assert default_temp_dir(output_dir) == output_dir / "temp"
+    assert default_logs_dir(output_dir) == output_dir / "logs"
+
+
+def test_resolve_writable_output_dir_falls_back_to_default(monkeypatch, tmp_path: Path) -> None:
+    preferred = tmp_path / "blocked"
+    fallback = tmp_path / "ThesisFormatFixerOutput"
+
+    def _stub_home() -> Path:
+        return tmp_path
+
+    original_mkdir = Path.mkdir
+
+    def _stub_mkdir(self: Path, *args: object, **kwargs: object) -> None:
+        if self == preferred:
+            raise OSError("blocked")
+        return original_mkdir(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "home", staticmethod(_stub_home))
+    monkeypatch.setattr(Path, "mkdir", _stub_mkdir)
+
+    resolved, notice = resolve_writable_output_dir(preferred)
+
+    assert resolved == fallback
+    assert notice is not None
+    assert "已自动切换到默认目录" in notice
+
+
+def test_validate_runtime_rules_requires_all_rulebooks(monkeypatch, tmp_path: Path) -> None:
+    rules_dir = tmp_path / "rules"
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    (rules_dir / "FORMAT_RULEBOOK_v1.md").write_text("v1", encoding="utf-8")
+    (rules_dir / "FORMAT_RULEBOOK_v2.md").write_text("v2", encoding="utf-8")
+
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+
+    try:
+        validate_runtime_rules()
+    except FileNotFoundError as exc:
+        assert "FORMAT_RULEBOOK_v3.md" in str(exc)
+    else:  # pragma: no cover - defensive
+        raise AssertionError("expected FileNotFoundError")

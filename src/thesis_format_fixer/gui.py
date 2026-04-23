@@ -6,7 +6,6 @@ import json
 import os
 import shutil
 import subprocess
-import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +13,16 @@ from typing import Any, Callable
 
 from thesis_format_fixer.app.runner import run_batch_fix, run_check_with_details, run_fix_with_details
 from thesis_format_fixer.reporters.report_builder import build_user_result_summary, render_user_summary_markdown
-from thesis_format_fixer.runtime_paths import APP_DISPLAY_NAME, default_output_dir, resolve_app_icon_path
+from thesis_format_fixer.runtime_paths import (
+    APP_DISPLAY_NAME,
+    default_logs_dir,
+    default_output_dir,
+    default_reports_dir,
+    default_temp_dir,
+    resolve_app_icon_path,
+    resolve_writable_output_dir,
+    validate_runtime_rules,
+)
 
 try:
     from PySide6.QtCore import QObject, Qt, QThread, Signal
@@ -231,40 +239,25 @@ def apply_gui_application_metadata(app: object) -> None:
     app.setWindowIcon(icon)  # type: ignore[call-arg]
 
 
-def _ensure_gui_output_directory_writable(output_dir: Path) -> None:
-    try:
-        output_dir.mkdir(parents=True, exist_ok=True)
-    except FileExistsError as exc:
-        raise PermissionError(f"输出目录不可创建: {output_dir}") from exc
-    except OSError as exc:
-        raise PermissionError(f"输出目录不可创建: {output_dir}") from exc
-
-    probe_path: Path | None = None
-    try:
-        with tempfile.NamedTemporaryFile(
-            dir=output_dir,
-            prefix=".gui_write_probe_",
-            suffix=".tmp",
-            delete=False,
-        ) as handle:
-            probe_path = Path(handle.name)
-    except OSError as exc:
-        raise PermissionError(f"输出目录不可写: {output_dir}") from exc
-    finally:
-        if probe_path is not None and probe_path.exists():
-            probe_path.unlink(missing_ok=True)
+def _prepare_gui_output_dir(output_dir: Path) -> tuple[Path, str | None]:
+    return resolve_writable_output_dir(output_dir)
 
 
 def _localize_gui_error(exc: Exception) -> str:
+    text = str(exc).strip()
     if isinstance(exc, PermissionError):
-        return str(exc)
+        return text
     if isinstance(exc, FileNotFoundError):
-        return str(exc)
+        if "rules" in text.lower():
+            return f"{text}\n\n请确认程序包中的 rules 目录完整，或从项目源码根目录重新启动。"
+        return text
     if isinstance(exc, IsADirectoryError):
-        return str(exc)
+        return text
     if isinstance(exc, ValueError):
-        return str(exc)
-    return f"处理失败：{exc}"
+        return text
+    if "No such file or directory" in text:
+        return f"系统无法找到所需文件：{text}"
+    return f"处理失败：{text}"
 
 
 def _default_report_paths(input_file: Path, output_dir: Path, mode: str) -> tuple[Path, Path]:
@@ -349,8 +342,9 @@ def execute_gui_batch_queue(
 
     filtered_files, ignored_files = filter_batch_import_paths(input_files)
     try:
-        _ensure_gui_output_directory_writable(output_dir)
-    except PermissionError as exc:
+        validate_runtime_rules()
+        output_dir, _ = _prepare_gui_output_dir(output_dir)
+    except (FileNotFoundError, PermissionError) as exc:
         return GuiBatchQueueExecutionResult(
             mode=normalized_mode,
             output_dir=output_dir,
@@ -491,7 +485,8 @@ def execute_gui_task(
         raise ValueError("输入文件必须是 .docx")
 
     try:
-        _ensure_gui_output_directory_writable(output_dir)
+        validate_runtime_rules()
+        output_dir, _ = _prepare_gui_output_dir(output_dir)
         report_json, report_md = _default_report_paths(input_file, output_dir, normalized_mode)
         generated_files: list[Path] = []
         if normalized_mode == "check":
@@ -677,6 +672,17 @@ def format_gui_result(result: GuiExecutionResult) -> str:
     else:
         lines.append("- (none)")
 
+    lines.extend(
+        [
+            "",
+            "目录策略",
+            f"- 输出目录：{result.output_dir}",
+            f"- 报告目录：{default_reports_dir(result.output_dir)}",
+            f"- 临时目录：{default_temp_dir(result.output_dir)}（仅用于可写性探测或临时文件）",
+            f"- 日志目录：{default_logs_dir(result.output_dir)}（当前版本保留为部署约定目录）",
+        ]
+    )
+
     if result.error_text:
         lines.extend(["", "错误信息", result.error_text.strip()])
     return "\n".join(lines) + "\n"
@@ -693,8 +699,9 @@ def execute_gui_batch_task(
         raise ValueError(f"输入目录不存在或不可用: {input_dir}")
 
     try:
-        _ensure_gui_output_directory_writable(output_dir)
-    except PermissionError as exc:
+        validate_runtime_rules()
+        output_dir, _ = _prepare_gui_output_dir(output_dir)
+    except (FileNotFoundError, PermissionError) as exc:
         return GuiBatchExecutionResult(
             input_dir=input_dir,
             output_dir=output_dir,
@@ -889,9 +896,9 @@ class _GuiActionsMixin:
             self._set_status_text(f"已打开用户版摘要：{self._last_user_summary_file}")
         except Exception as exc:  # pragma: no cover - platform dependent
             if messagebox is not None:
-                messagebox.showerror("打开用户版摘要失败", str(exc), parent=self._status_parent())
+                messagebox.showerror("打开用户版摘要失败", _localize_gui_error(exc), parent=self._status_parent())
             else:
-                self._set_status_text(str(exc))
+                self._set_status_text(_localize_gui_error(exc))
 
     def _export_user_summary(self) -> None:
         if self._last_user_summary_file is None:
@@ -916,9 +923,9 @@ class _GuiActionsMixin:
             self._set_status_text(f"用户版摘要已导出到：{exported}")
         except Exception as exc:  # pragma: no cover - platform dependent
             if messagebox is not None:
-                messagebox.showerror("导出用户版摘要失败", str(exc), parent=self._status_parent())
+                messagebox.showerror("导出用户版摘要失败", _localize_gui_error(exc), parent=self._status_parent())
             else:
-                self._set_status_text(str(exc))
+                self._set_status_text(_localize_gui_error(exc))
 
 
 if _PYSIDE6_IMPORT_ERROR is None:
@@ -1511,25 +1518,13 @@ if _PYSIDE6_IMPORT_ERROR is None:
 
         def _ensure_output_dir_writable(self, output_dir: Path) -> tuple[bool, str | None]:
             try:
-                output_dir.mkdir(parents=True, exist_ok=True)
-            except OSError:
-                return False, f"输出目录不可创建: {output_dir}"
-
-            probe: Path | None = None
-            try:
-                with tempfile.NamedTemporaryFile(
-                    dir=output_dir,
-                    prefix=".gui_write_probe_",
-                    suffix=".tmp",
-                    delete=False,
-                ) as handle:
-                    probe = Path(handle.name)
-            except OSError:
-                return False, f"输出目录不可写: {output_dir}"
-            finally:
-                if probe is not None and probe.exists():
-                    probe.unlink(missing_ok=True)
-            return True, None
+                resolved_dir, notice = _prepare_gui_output_dir(output_dir)
+            except PermissionError as exc:
+                return False, _localize_gui_error(exc)
+            if resolved_dir != output_dir:
+                self.output_path_edit.setText(str(resolved_dir))
+                return True, notice
+            return True, notice
 
         def _validate_before_run(self) -> tuple[Path | None, Path, str, bool, tuple[Path, ...]] | None:
             input_value = self.input_path_edit.text().strip()
@@ -1554,6 +1549,15 @@ if _PYSIDE6_IMPORT_ERROR is None:
                     messagebox.showwarning("缺少输出目录", "请先选择输出目录。", parent=self)
                 return None
 
+            try:
+                validate_runtime_rules()
+            except FileNotFoundError as exc:
+                text = _localize_gui_error(exc)
+                self._set_status_text("规则资源缺失，无法执行。")
+                if messagebox is not None:
+                    messagebox.showerror("规则资源缺失", text, parent=self)
+                return None
+
             input_path = Path(input_value)
             output_dir = Path(output_value)
             output_ok, output_error = self._ensure_output_dir_writable(output_dir)
@@ -1562,6 +1566,11 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 if messagebox is not None and output_error:
                     messagebox.showerror("输出目录不可用", output_error, parent=self)
                 return None
+            if output_error:
+                self._set_status_text(output_error)
+                if messagebox is not None:
+                    messagebox.showwarning("输出目录已切换", output_error, parent=self)
+                output_dir = Path(self.output_path_edit.text().strip())
 
             if batch_queue_mode:
                 return None, output_dir, mode, self.recursive_checkbox.isChecked(), self._batch_input_files
@@ -2091,9 +2100,9 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 self._set_status_text(f"已打开输出目录：{self._last_output_dir}")
             except Exception as exc:  # pragma: no cover - platform dependent
                 if messagebox is not None:
-                    messagebox.showerror("打开输出目录失败", str(exc), parent=self)
+                    messagebox.showerror("打开输出目录失败", _localize_gui_error(exc), parent=self)
                 else:
-                    self._set_status_text(str(exc))
+                    self._set_status_text(_localize_gui_error(exc))
 
         def _open_detailed_report(self) -> None:
             if self._last_report_file is None:
@@ -2104,9 +2113,9 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 self._set_status_text(f"已打开关键报告：{self._last_report_file}")
             except Exception as exc:  # pragma: no cover - platform dependent
                 if messagebox is not None:
-                    messagebox.showerror("打开关键报告失败", str(exc), parent=self)
+                    messagebox.showerror("打开关键报告失败", _localize_gui_error(exc), parent=self)
                 else:
-                    self._set_status_text(str(exc))
+                    self._set_status_text(_localize_gui_error(exc))
 
         def _open_fixed_docx(self) -> None:
             if self._last_fixed_docx_file is None:
@@ -2117,9 +2126,9 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 self._set_status_text(f"已打开修复后文件：{self._last_fixed_docx_file}")
             except Exception as exc:  # pragma: no cover - platform dependent
                 if messagebox is not None:
-                    messagebox.showerror("打开修复后文件失败", str(exc), parent=self)
+                    messagebox.showerror("打开修复后文件失败", _localize_gui_error(exc), parent=self)
                 else:
-                    self._set_status_text(str(exc))
+                    self._set_status_text(_localize_gui_error(exc))
 
         def _open_selected_artifact(self, item: QListWidgetItem) -> None:
             raw_path = item.data(Qt.UserRole)
@@ -2131,9 +2140,9 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 self._set_status_text(f"已打开文件：{path}")
             except Exception as exc:  # pragma: no cover - platform dependent
                 if messagebox is not None:
-                    messagebox.showerror("打开文件失败", str(exc), parent=self)
+                    messagebox.showerror("打开文件失败", _localize_gui_error(exc), parent=self)
                 else:
-                    self._set_status_text(str(exc))
+                    self._set_status_text(_localize_gui_error(exc))
 
         def _reset_form(self) -> None:
             if self._worker_thread is not None:

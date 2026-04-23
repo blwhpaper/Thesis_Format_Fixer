@@ -2,7 +2,7 @@
 
 `thesis-format-fixer` 是一个针对英文毕业论文 `.docx` 的格式检查/修复工具。
 
-当前阶段：**TASK-035 macOS 发布验收、图标资源与分发说明收口**。
+当前阶段：**TASK-APP-04 交付化与权限/部署收口**。
 
 ## 1. 开发环境安装
 
@@ -43,6 +43,7 @@ thesis-format-fixer-api
 
 GUI 默认会把输出目录预填为 `~/ThesisFormatFixerOutput`；你也可以在界面中改为任意可写目录。
 macOS 下源码运行与 `.app` bundle 运行现在共用同一份应用名与图标资源，窗口标题统一为 `Thesis Format Fixer`。
+若用户手动选择了不可写目录，GUI 会在执行前先做可写性检查，并自动回退到默认输出目录后给出中文提示。
 
 ## 3. CLI 用法
 
@@ -165,8 +166,11 @@ scripts\build_windows.bat
 
 默认产物：
 
-- `dist\ThesisFormatFixer.exe`
+- `dist\ThesisFormatFixer\ThesisFormatFixer.exe`
+- `dist\ThesisFormatFixer\rules\`
 - 构建脚本默认把 PyInstaller 缓存写到项目内 `.pyinstaller\`
+- 构建脚本会在完成后立即检查 `dist\ThesisFormatFixer\rules`
+- 构建脚本会额外检查 `dist\ThesisFormatFixer\rules\FORMAT_RULEBOOK_v1.md`
 - Windows 侧本轮仅完成脚本与 README 验收口径补齐，**未在真实 Windows 环境完成构建与启动**
 
 ### 打包说明
@@ -175,17 +179,19 @@ scripts\build_windows.bat
 - 打包入口：`src/thesis_format_fixer/gui.py`
 - macOS `.app` 会把 `rules/` 打进 `Contents/Resources/rules`
 - macOS `.app` 会把图标资源打进 `Contents/Resources/resources/icons/macos/`
+- Windows `dist\ThesisFormatFixer\` 目录会同时带出 `rules/` 资源目录
 - 源码运行、PyInstaller frozen 运行、macOS `.app` bundle 运行共用同一套规则定位逻辑
 - 源码运行、PyInstaller frozen 运行、macOS `.app` bundle 运行共用同一套图标定位逻辑
 - GUI 默认输出目录位于用户主目录下，避免把结果写回临时解包目录或应用 bundle 内部
-- Windows 产物为单个 `exe`；macOS 产物为 `.app` 与配套试用分发 zip
+- 报告目录默认与输出目录相同；临时目录与日志目录按 `输出目录/temp`、`输出目录/logs` 约定收口
+- Windows 产物为 `dist\ThesisFormatFixer\` 目录；macOS 产物为 `.app` 与配套试用分发 zip
 - 当前真实验收结论：
   - macOS：已真实完成 `pip install`、PyInstaller 构建、`.app` 启动
   - Windows：未真实构建，不能宣称已验收
 
 ## 6. 发布说明
 
-当前发布闭环为“本地构建后直接分发 `.app` / `.zip` / `exe`”，不做 Mac App Store 上架：
+当前发布闭环为“本地构建后直接分发 `.app` / `.zip` / Windows dist 目录”，不做 Mac App Store 上架：
 
 - macOS 未签名试用分发：
   - 主构建产物：`dist/ThesisFormatFixer.app`
@@ -195,7 +201,7 @@ scripts\build_windows.bat
   - 先对 `dist/ThesisFormatFixer.app` 做 Developer ID 签名与公证
   - 建议正式发布命名：`ThesisFormatFixer-macOS-signed.zip` 或 `ThesisFormatFixer-macOS-notarized.zip`
   - 详细步骤见 [docs/MACOS_DISTRIBUTION_GUIDE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/MACOS_DISTRIBUTION_GUIDE.md)
-- Windows：分发 `dist\ThesisFormatFixer.exe`
+- Windows：分发整个 `dist\ThesisFormatFixer\` 目录，不要只拷贝其中单个 `exe`
 - `.command` 不再作为 macOS 主交付入口，仅用于开发环境下从源码树快速启动 GUI
 - README 中保留源码运行方式，便于开发与验收
 - 本轮不包含商店分发、自动更新和安装器美化
@@ -215,10 +221,12 @@ scripts\build_windows.bat
 - Windows 发布前必须在真实 Windows 环境至少补做一次：
   - `pip install -r requirements.txt`
   - `scripts\build_windows.bat`
-  - 启动 `dist\ThesisFormatFixer.exe`
+  - 启动 `dist\ThesisFormatFixer\ThesisFormatFixer.exe`
 
-macOS 发布与验收文档：
+部署与验收文档：
 
+- [docs/TASK-APP-04_DEPLOYMENT.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/TASK-APP-04_DEPLOYMENT.md)
+- [docs/TASK-APP-04_ACCEPTANCE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/TASK-APP-04_ACCEPTANCE.md)
 - [docs/TASK-035_MACOS_RELEASE_ACCEPTANCE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/TASK-035_MACOS_RELEASE_ACCEPTANCE.md)
 - [docs/MACOS_DISTRIBUTION_GUIDE.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/MACOS_DISTRIBUTION_GUIDE.md)
 
@@ -260,6 +268,15 @@ macOS 发布与验收文档：
   - `batch_summary.json`
   - `batch_summary.md`
 
+## 9.1 输出/报告/临时/日志目录策略
+
+- 输出目录：默认使用 `~/ThesisFormatFixerOutput`
+- 报告目录：与输出目录同级收口，不额外拆到程序安装目录
+- 临时目录：约定使用 `输出目录/temp`，避免写入应用 bundle、`dist/` 解包目录或系统受限路径
+- 日志目录：约定使用 `输出目录/logs`，当前版本以 GUI 中文提示和技术报告为主，不额外引入后台日志服务
+- 回退策略：用户手动选择的输出目录不可写时，GUI 会在执行前自动切回默认输出目录，并弹出中文说明
+- 资源目录：`rules/` 与 `resources/` 只读使用；源码态从仓库根目录读取，打包态从 bundle / dist 内资源目录读取
+
 ## 10. 当前支持范围（A/B/C 边界内）
 
 - A 类低风险自动修复（已冻结白名单）
@@ -290,7 +307,8 @@ macOS 发布与验收文档：
 - 输入不是 `.docx`：会明确提示 `输入文件必须是 .docx`。
 - 批量目录为空：会产出 `batch_summary`，并提示未找到 `.docx`。
 - 输出目录不可写：会明确提示 `输出目录不可写/不可创建`。
-- 打包后 GUI 无法读取规则：优先检查产物内是否包含 `rules/` 目录；当前 PyInstaller 配置已默认打包该目录。
+- 输出目录不可写但默认目录可用：GUI 会自动切回 `~/ThesisFormatFixerOutput` 并提示已切换。
+- 打包后 GUI 无法读取规则：会给出中文提示，优先检查产物内是否包含 `rules/FORMAT_RULEBOOK_v1.md`、`v2.md`、`v3.md`。
 - 批量中单个文件失败：不会中断全部任务，会在汇总中显示该文件 `exit_code` 与错误信息。
 - GUI 运行失败：显示可理解错误信息，不向普通用户直出 Python traceback。
 

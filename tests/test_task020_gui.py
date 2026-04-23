@@ -524,3 +524,74 @@ def test_execute_gui_batch_queue_tracks_status_flow_and_result_visibility(tmp_pa
     assert "已完成检查，当前未发现需要你额外处理的问题" in success_detail
     assert "错误信息" in failed_detail
     assert "boom: 模拟失败" in failed_detail
+
+
+def test_execute_gui_task_localizes_missing_rules(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_docx = tmp_path / "demo.docx"
+    input_docx.write_bytes(b"fake")
+
+    def _stub_validate_runtime_rules() -> Path:
+        raise FileNotFoundError("程序运行所需的 rules 目录不存在")
+
+    monkeypatch.setattr(gui, "validate_runtime_rules", _stub_validate_runtime_rules)
+
+    result = gui.execute_gui_task(
+        input_file=input_docx,
+        output_dir=tmp_path / "out",
+        mode="check",
+    )
+
+    assert result.success is False
+    assert result.error_text is not None
+    assert "rules 目录不存在" in result.error_text
+    assert "请确认程序包中的 rules 目录完整" in result.error_text
+
+
+def test_execute_gui_task_falls_back_to_default_output_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    input_docx = tmp_path / "demo.docx"
+    input_docx.write_bytes(b"fake")
+    preferred_output_dir = tmp_path / "blocked"
+    fallback_output_dir = tmp_path / "fallback"
+
+    monkeypatch.setattr(gui, "validate_runtime_rules", lambda: tmp_path / "rules")
+    monkeypatch.setattr(
+        gui,
+        "_prepare_gui_output_dir",
+        lambda output_dir: (fallback_output_dir, "输出目录不可写，已自动切换到默认目录。"),
+    )
+
+    def _stub_check_runner(
+        input_file: Path,
+        *,
+        report_json_out: Path | None = None,
+        report_md_out: Path | None = None,
+    ) -> tuple[int, dict, Path | None, Path | None]:
+        assert input_file == input_docx
+        assert report_json_out is not None
+        assert report_md_out is not None
+        assert report_json_out.parent == fallback_output_dir
+        assert report_md_out.parent == fallback_output_dir
+        _touch(report_json_out)
+        _touch(report_md_out)
+        user_summary_md = fallback_output_dir / "check.user_summary.md"
+        _touch(user_summary_md)
+        return (
+            0,
+            {
+                "summary": {},
+                "user_summary": {"overall_status": "已完成"},
+                "artifacts": {"user_summary_md": str(user_summary_md)},
+            },
+            report_json_out,
+            report_md_out,
+        )
+
+    result = gui.execute_gui_task(
+        input_file=input_docx,
+        output_dir=preferred_output_dir,
+        mode="check",
+        check_runner=_stub_check_runner,
+    )
+
+    assert result.success is True
+    assert result.output_dir == fallback_output_dir

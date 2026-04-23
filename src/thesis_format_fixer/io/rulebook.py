@@ -11,11 +11,17 @@ def resolve_rulebook_path(path: Path | None = None) -> Path:
     if path is not None:
         return path
     rules_dir = runtime_rules_dir()
-    target = rules_dir / "FORMAT_RULEBOOK_v1.md"
-    if target.exists():
-        return target
+    candidates = (
+        rules_dir / "FORMAT_RULEBOOK_v1.md",
+        rules_dir / "sources" / "FORMAT_RULEBOOK_v1.md",
+    )
+    for target in candidates:
+        if target.exists():
+            return target
     raise FileNotFoundError(
-        f"Rulebook not found at expected runtime path: {target} (rules_dir={rules_dir})"
+        "Rulebook not found at expected runtime paths: "
+        + ", ".join(str(item) for item in candidates)
+        + f" (rules_dir={rules_dir})"
     )
 
 
