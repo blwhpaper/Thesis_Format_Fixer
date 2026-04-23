@@ -33,6 +33,14 @@ python -m thesis_format_fixer.gui
 thesis-format-fixer-gui
 ```
 
+### HTTP API
+
+```bash
+thesis-format-fixer-api
+```
+
+默认监听：`http://127.0.0.1:8000`
+
 GUI 默认会把输出目录预填为 `~/ThesisFormatFixerOutput`；你也可以在界面中改为任意可写目录。
 macOS 下源码运行与 `.app` bundle 运行现在共用同一份应用名与图标资源，窗口标题统一为 `Thesis Format Fixer`。
 
@@ -107,6 +115,19 @@ GUI 结果区说明：
 - 主区优先显示用户摘要。
 - 下半区显示详细结果与文件快捷入口。
 - 技术字段（如 `auto_fix_rule_count`、`reference_blocking_count`）保留在次级区域，便于排障但不干扰普通用户阅读。
+
+## 4.1 HTTP API（Appsmith 最小链路）
+
+- `POST /api/jobs/check`
+- `POST /api/jobs/fix`
+- `GET /api/jobs/{job_id}`
+- `GET /api/jobs/{job_id}/download/fixed-docx`
+- `GET /api/jobs/{job_id}/download/report-md`
+- `GET /api/health`
+
+接口说明见：
+
+- [docs/TASK-APP-01_APPSMITH_API_SPEC.md](/Users/apple/Projects/Thesis_Format_Fixer/docs/TASK-APP-01_APPSMITH_API_SPEC.md)
 
 ## 5. 双平台打包
 

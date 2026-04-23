@@ -10,10 +10,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Thesis Format Fixer Contributors" }]
-dependencies = ["PySide6>=6.6"]
+dependencies = [
+    "PySide6>=6.6",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+    "python-multipart>=0.0.9,<1",
+    "httpx>=0.27,<1",
+]
 
 [project.scripts]
 thesis-format-fixer = "thesis_format_fixer.cli:main"
+thesis-format-fixer-api = "thesis_format_fixer.api.app:main"
 
 [project.gui-scripts]
 thesis-format-fixer-gui = "thesis_format_fixer.gui:main"
