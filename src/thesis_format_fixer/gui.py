@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -77,6 +78,7 @@ else:
 
 RunnerWithDetails = Callable[..., tuple[int, dict[str, Any], Path | None, Path | None]]
 BatchRunner = Callable[..., int]
+BatchProgressCallback = Callable[["BatchTaskRecord"], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +108,31 @@ class GuiBatchExecutionResult:
     error_text: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class BatchTaskRecord:
+    file_name: str
+    file_path: Path
+    mode: str
+    status: str
+    started_at: str | None = None
+    finished_at: str | None = None
+    summary: str = ""
+    artifact_paths: dict[str, str] = field(default_factory=dict)
+    error_message: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class GuiBatchQueueExecutionResult:
+    mode: str
+    output_dir: Path
+    total_files: int
+    succeeded: int
+    failed: int
+    tasks: tuple[BatchTaskRecord, ...] = ()
+    ignored_files: tuple[str, ...] = ()
+    error_text: str | None = None
+
+
 class _DialogBridge:
     def askopenfilename(self, **kwargs: object) -> str:
         if QFileDialog is None:
@@ -122,6 +149,15 @@ class _DialogBridge:
         parent = kwargs.get("parent")
         title = str(kwargs.get("title", "选择目录"))
         return QFileDialog.getExistingDirectory(parent, title)
+
+    def askopenfilenames(self, **kwargs: object) -> list[str]:
+        if QFileDialog is None:
+            return []
+        parent = kwargs.get("parent")
+        title = str(kwargs.get("title", "选择文件"))
+        filter_spec = "Word Document (*.docx);;All Files (*)"
+        selected, _ = QFileDialog.getOpenFileNames(parent, title, "", filter_spec)
+        return list(selected)
 
     def asksaveasfilename(self, **kwargs: object) -> str:
         if QFileDialog is None:
@@ -237,6 +273,203 @@ def _default_report_paths(input_file: Path, output_dir: Path, mode: str) -> tupl
         return output_dir / f"{report_stem}.json", output_dir / f"{report_stem}.md"
     output_docx = output_dir / f"{input_file.stem}.fixed.docx"
     return output_docx.with_suffix(".report.json"), output_docx.with_suffix(".report.md")
+
+
+def _batch_timestamp() -> str:
+    return datetime.now().isoformat(timespec="seconds")
+
+
+def filter_batch_import_paths(paths: list[Path] | tuple[Path, ...]) -> tuple[tuple[Path, ...], tuple[str, ...]]:
+    docx_paths: list[Path] = []
+    ignored: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        path = Path(raw_path)
+        normalized = str(path)
+        if path.suffix.lower() != ".docx":
+            ignored.append(path.name)
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        docx_paths.append(path)
+    return tuple(docx_paths), tuple(ignored)
+
+
+def collect_docx_files_from_directory(input_dir: Path, *, recursive: bool = True) -> tuple[tuple[Path, ...], tuple[str, ...]]:
+    if recursive:
+        candidates = sorted(path for path in input_dir.rglob("*") if path.is_file())
+    else:
+        candidates = sorted(path for path in input_dir.iterdir() if path.is_file())
+    return filter_batch_import_paths(candidates)
+
+
+def _build_batch_task_output_dir(base_output_dir: Path, input_file: Path, *, index: int) -> Path:
+    safe_stem = input_file.stem.replace(" ", "_") or "document"
+    return base_output_dir / f"{index:03d}_{safe_stem}"
+
+
+def _extract_task_summary(result: GuiExecutionResult) -> str:
+    payload = result.payload if isinstance(result.payload, dict) else {}
+    user_summary = payload.get("user_summary", {}) if isinstance(payload, dict) else {}
+    if isinstance(user_summary, dict):
+        overall_status = str(user_summary.get("overall_status", "")).strip()
+        if overall_status:
+            return overall_status
+    if result.success:
+        return "处理完成。"
+    return result.error_text or "处理失败。"
+
+
+def _extract_task_artifact_paths(result: GuiExecutionResult) -> dict[str, str]:
+    payload = result.payload if isinstance(result.payload, dict) else {}
+    artifacts = payload.get("artifacts", {}) if isinstance(payload, dict) else {}
+    artifact_paths: dict[str, str] = {}
+    if isinstance(artifacts, dict):
+        for key, value in artifacts.items():
+            if isinstance(value, str) and value.strip():
+                artifact_paths[key] = value
+    if "output_dir" not in artifact_paths:
+        artifact_paths["output_dir"] = str(result.output_dir)
+    return artifact_paths
+
+
+def execute_gui_batch_queue(
+    *,
+    input_files: tuple[Path, ...],
+    output_dir: Path,
+    mode: str,
+    progress_callback: BatchProgressCallback | None = None,
+    check_runner: RunnerWithDetails = run_check_with_details,
+    fix_runner: RunnerWithDetails = run_fix_with_details,
+) -> GuiBatchQueueExecutionResult:
+    normalized_mode = mode.strip().lower()
+    if normalized_mode not in {"check", "fix"}:
+        raise ValueError(f"Unsupported batch mode: {mode}")
+
+    filtered_files, ignored_files = filter_batch_import_paths(input_files)
+    try:
+        _ensure_gui_output_directory_writable(output_dir)
+    except PermissionError as exc:
+        return GuiBatchQueueExecutionResult(
+            mode=normalized_mode,
+            output_dir=output_dir,
+            total_files=0,
+            succeeded=0,
+            failed=0,
+            tasks=(),
+            ignored_files=ignored_files,
+            error_text=_localize_gui_error(exc),
+        )
+
+    tasks: list[BatchTaskRecord] = []
+    for path in filtered_files:
+        tasks.append(
+            BatchTaskRecord(
+                file_name=path.name,
+                file_path=path,
+                mode=normalized_mode,
+                status="pending",
+            )
+        )
+
+    succeeded = 0
+    failed = 0
+
+    for index, task in enumerate(tasks, start=1):
+        running_task = BatchTaskRecord(
+            file_name=task.file_name,
+            file_path=task.file_path,
+            mode=task.mode,
+            status="running",
+            started_at=_batch_timestamp(),
+        )
+        tasks[index - 1] = running_task
+        if progress_callback is not None:
+            progress_callback(running_task)
+
+        task_output_dir = _build_batch_task_output_dir(output_dir, task.file_path, index=index)
+        result = execute_gui_task(
+            input_file=task.file_path,
+            output_dir=task_output_dir,
+            mode=normalized_mode,
+            check_runner=check_runner,
+            fix_runner=fix_runner,
+        )
+
+        finished_task = BatchTaskRecord(
+            file_name=task.file_name,
+            file_path=task.file_path,
+            mode=task.mode,
+            status="success" if result.success else "failed",
+            started_at=running_task.started_at,
+            finished_at=_batch_timestamp(),
+            summary=_extract_task_summary(result),
+            artifact_paths=_extract_task_artifact_paths(result),
+            error_message=result.error_text,
+        )
+        tasks[index - 1] = finished_task
+        if result.success:
+            succeeded += 1
+        else:
+            failed += 1
+        if progress_callback is not None:
+            progress_callback(finished_task)
+
+    return GuiBatchQueueExecutionResult(
+        mode=normalized_mode,
+        output_dir=output_dir,
+        total_files=len(filtered_files),
+        succeeded=succeeded,
+        failed=failed,
+        tasks=tuple(tasks),
+        ignored_files=ignored_files,
+        error_text=None,
+    )
+
+
+def format_batch_task_detail(task: BatchTaskRecord) -> str:
+    processing_label = "修复" if task.mode == "fix" else "检查"
+    lines = [
+        "批量任务详情",
+        f"- 文件名：{task.file_name}",
+        f"- 处理方式：{processing_label}",
+        f"- 状态：{task.status}",
+        f"- 开始时间：{task.started_at or '-'}",
+        f"- 完成时间：{task.finished_at or '-'}",
+    ]
+    if task.summary:
+        lines.extend(["", "中文结果摘要", task.summary])
+    if task.error_message:
+        lines.extend(["", "错误信息", task.error_message])
+    if task.artifact_paths:
+        lines.extend(["", "产物入口"])
+        for key, value in task.artifact_paths.items():
+            lines.append(f"- {key}: {value}")
+    return "\n".join(lines) + "\n"
+
+
+def format_gui_batch_queue_result(result: GuiBatchQueueExecutionResult) -> str:
+    processing_label = "批量修复" if result.mode == "fix" else "批量检查"
+    lines = [
+        "GUI 批量任务结果面板",
+        f"- 本次处理类型：{processing_label}",
+        f"- 输出目录：{result.output_dir}",
+        f"- 总文件数：{result.total_files}",
+        f"- 成功数量：{result.succeeded}",
+        f"- 失败数量：{result.failed}",
+    ]
+    if result.ignored_files:
+        lines.append(f"- 已忽略的非 docx 文件：{', '.join(result.ignored_files)}")
+    lines.extend(["", "任务列表"])
+    if result.tasks:
+        for task in result.tasks:
+            lines.append(f"- {task.file_name} | {task.status} | {task.summary or '-'}")
+    else:
+        lines.append("- 当前没有可执行的 .docx 文件。")
+    if result.error_text:
+        lines.extend(["", "错误信息", result.error_text])
+    return "\n".join(lines) + "\n"
 
 
 def execute_gui_task(
@@ -692,22 +925,40 @@ if _PYSIDE6_IMPORT_ERROR is None:
 
     class _GuiWorker(QObject):
         finished = Signal(object)
+        task_updated = Signal(object)
 
-        def __init__(self, *, mode: str, input_path: Path, output_dir: Path, recursive: bool) -> None:
+        def __init__(
+            self,
+            *,
+            mode: str,
+            input_path: Path | None,
+            output_dir: Path,
+            recursive: bool,
+            batch_input_files: tuple[Path, ...] = (),
+        ) -> None:
             super().__init__()
             self.mode = mode
             self.input_path = input_path
             self.output_dir = output_dir
             self.recursive = recursive
+            self.batch_input_files = batch_input_files
 
         def run(self) -> None:
-            if self.mode == "batch-fix":
+            if self.mode == "batch-fix" and self.input_path is not None:
                 result = execute_gui_batch_task(
                     input_dir=self.input_path,
                     output_dir=self.output_dir,
                     recursive=self.recursive,
                 )
+            elif self.mode in {"batch-check", "batch-fix"}:
+                result = execute_gui_batch_queue(
+                    input_files=self.batch_input_files,
+                    output_dir=self.output_dir,
+                    mode="fix" if self.mode == "batch-fix" else "check",
+                    progress_callback=self.task_updated.emit,
+                )
             else:
+                assert self.input_path is not None
                 result = execute_gui_task(
                     input_file=self.input_path,
                     output_dir=self.output_dir,
@@ -733,6 +984,10 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self._last_fixed_docx_file: Path | None = None
             self._last_user_summary_file: Path | None = None
             self._artifact_paths: tuple[Path, ...] = ()
+            self._batch_input_files: tuple[Path, ...] = ()
+            self._batch_ignored_files: tuple[str, ...] = ()
+            self._task_records: list[BatchTaskRecord] = []
+            self._selected_task_file_name: str | None = None
             self._worker_thread: QThread | None = None
             self._worker: _GuiWorker | None = None
 
@@ -740,7 +995,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.output_path_edit.setText(str(default_gui_output_dir()))
             self._refresh_mode_ui()
             self._refresh_execute_state()
-            self._set_status_text("请选择单个 .docx 文件；输出目录已默认指向用户主目录下的 ThesisFormatFixerOutput。")
+            self._set_status_text("请选择单个 .docx 文件，或切换到批量模式后导入多个文件 / 文件夹。")
 
         def _status_parent(self) -> object | None:
             return self
@@ -767,12 +1022,12 @@ if _PYSIDE6_IMPORT_ERROR is None:
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(6)
 
-            title = QLabel("单文件论文批改工作台", container)
+            title = QLabel("论文格式处理工作台", container)
             title.setObjectName("heroTitle")
             layout.addWidget(title)
 
             subtitle = QLabel(
-                "按“选择 .docx 文件 -> 选择检查格式或修复格式 -> 开始执行 -> 查看用户摘要与产物入口”的顺序完成单文件处理。",
+                "主流程保持线性：先导入单个或多个 .docx，再选择检查或修复，最后查看中文摘要、任务状态和产物入口。",
                 container,
             )
             subtitle.setObjectName("heroSubtitle")
@@ -781,7 +1036,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             return container
 
         def _build_input_group(self) -> QGroupBox:
-            group = QGroupBox("第 1 步：选择论文文件", self)
+            group = QGroupBox("第 1 步：选择论文文件或批量来源", self)
             layout = QFormLayout(group)
             layout.setHorizontalSpacing(12)
             layout.setVerticalSpacing(12)
@@ -797,6 +1052,20 @@ if _PYSIDE6_IMPORT_ERROR is None:
             input_row.addWidget(self.input_browse_button)
             layout.addRow(self.input_label, self._wrap_row(input_row))
 
+            batch_row = QHBoxLayout()
+            self.batch_files_button = QPushButton("导入多个文件", group)
+            self.batch_files_button.clicked.connect(self._pick_batch_files)
+            batch_row.addWidget(self.batch_files_button)
+            self.batch_folder_button = QPushButton("导入文件夹", group)
+            self.batch_folder_button.clicked.connect(self._pick_batch_directory)
+            batch_row.addWidget(self.batch_folder_button)
+            self.clear_batch_button = QPushButton("清空批量列表", group)
+            self.clear_batch_button.clicked.connect(self._clear_batch_inputs)
+            batch_row.addWidget(self.clear_batch_button)
+            batch_row.addStretch(1)
+            self.batch_actions_container = self._wrap_row(batch_row)
+            layout.addRow("批量导入", self.batch_actions_container)
+
             self.output_path_edit = QLineEdit(group)
             self.output_path_edit.setPlaceholderText("选择输出目录，用于保存报告和修复结果")
             self.output_path_edit.textChanged.connect(self._refresh_execute_state)
@@ -810,12 +1079,13 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.mode_combo = QComboBox(group)
             self.mode_combo.addItem("检查格式", "check")
             self.mode_combo.addItem("修复格式", "fix")
+            self.mode_combo.addItem("批量检查", "batch-check")
+            self.mode_combo.addItem("批量修复", "batch-fix")
             self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
             self.recursive_checkbox = QCheckBox("递归扫描子目录", group)
             self.recursive_checkbox.setChecked(True)
             self.recursive_checkbox.toggled.connect(self._refresh_execute_state)
             self.mode_combo.hide()
-            self.recursive_checkbox.hide()
 
             self.mode_hint_label = QLabel(group)
             self.mode_hint_label.setObjectName("modeHintLabel")
@@ -847,6 +1117,16 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.fix_mode_button.setCheckable(True)
             self.fix_mode_button.clicked.connect(lambda: self._set_single_file_mode("fix"))
             mode_row.addWidget(self.fix_mode_button)
+
+            self.batch_check_mode_button = QPushButton("批量检查", group)
+            self.batch_check_mode_button.setCheckable(True)
+            self.batch_check_mode_button.clicked.connect(lambda: self._set_single_file_mode("batch-check"))
+            mode_row.addWidget(self.batch_check_mode_button)
+
+            self.batch_fix_mode_button = QPushButton("批量修复", group)
+            self.batch_fix_mode_button.setCheckable(True)
+            self.batch_fix_mode_button.clicked.connect(lambda: self._set_single_file_mode("batch-fix"))
+            mode_row.addWidget(self.batch_fix_mode_button)
             mode_row.addStretch(1)
             layout.addLayout(mode_row)
 
@@ -932,6 +1212,26 @@ if _PYSIDE6_IMPORT_ERROR is None:
             overview_layout.addWidget(self.next_step_label)
 
             layout.addWidget(overview)
+
+            task_panel = QWidget(group)
+            task_panel_layout = QHBoxLayout(task_panel)
+            task_panel_layout.setContentsMargins(0, 0, 0, 0)
+            task_panel_layout.setSpacing(8)
+            task_panel_layout.addWidget(QLabel("任务状态筛选", task_panel))
+            self.task_filter_combo = QComboBox(task_panel)
+            self.task_filter_combo.addItem("全部任务", "all")
+            self.task_filter_combo.addItem("待处理", "pending")
+            self.task_filter_combo.addItem("处理中", "running")
+            self.task_filter_combo.addItem("已完成", "success")
+            self.task_filter_combo.addItem("失败", "failed")
+            self.task_filter_combo.currentIndexChanged.connect(self._refresh_task_list)
+            task_panel_layout.addWidget(self.task_filter_combo)
+            task_panel_layout.addStretch(1)
+            layout.addWidget(task_panel)
+
+            self.task_list = QListWidget(group)
+            self.task_list.itemSelectionChanged.connect(self._on_task_selection_changed)
+            layout.addWidget(self.task_list)
 
             splitter = QSplitter(Qt.Vertical, group)
 
@@ -1108,25 +1408,35 @@ if _PYSIDE6_IMPORT_ERROR is None:
 
         def _refresh_mode_ui(self) -> None:
             batch_mode = self._mode() == "batch-fix"
-            self.input_label.setText("输入目录" if batch_mode else "论文文件")
+            batch_queue_mode = self._mode() in {"batch-check", "batch-fix"}
+            self.input_label.setText("批量来源" if batch_queue_mode else "论文文件")
             self.input_path_edit.setPlaceholderText(
-                "选择包含 .docx 的输入目录" if batch_mode else "选择待检查或修复的 .docx 文件"
+                "导入多个 .docx 文件，或从文件夹中批量读取" if batch_queue_mode else "选择待检查或修复的 .docx 文件"
             )
-            self.recursive_checkbox.setVisible(batch_mode)
+            self.recursive_checkbox.setVisible(batch_queue_mode)
+            self.batch_actions_container.setVisible(batch_queue_mode)
+            self.input_browse_button.setVisible(not batch_queue_mode)
+            self.input_path_edit.setReadOnly(batch_queue_mode)
             self.input_browse_button.setText("选择目录" if batch_mode else "选择输入")
-            if batch_mode:
-                self.mode_hint_label.setText("批量修复会扫描目录中的 .docx，并统一输出批处理摘要与逐文件结果。")
+            if batch_queue_mode:
+                hint = "批量处理会先生成任务队列，再逐个复用现有单文件能力执行。可按状态筛选，并查看每个任务的中文摘要与产物入口。"
+                self.mode_hint_label.setText(hint)
+                self._refresh_batch_input_display()
             elif self._mode() == "fix":
                 self.mode_hint_label.setText("仅支持单个 .docx 文件。修复格式会生成修复后文档，并同时保留用户摘要和技术报告。")
             else:
                 self.mode_hint_label.setText("仅支持单个 .docx 文件。检查格式不会修改原文档，适合先看异常项和人工复核项。")
             self.check_mode_button.setChecked(self._mode() == "check")
             self.fix_mode_button.setChecked(self._mode() == "fix")
+            self.batch_check_mode_button.setChecked(self._mode() == "batch-check")
+            self.batch_fix_mode_button.setChecked(self._mode() == "batch-fix")
 
         def _refresh_execute_state(self) -> None:
             input_value = self.input_path_edit.text().strip()
             output_value = self.output_path_edit.text().strip()
-            enabled = bool(input_value and output_value and self._worker_thread is None)
+            batch_queue_mode = self._mode() in {"batch-check", "batch-fix"}
+            has_input = bool(self._batch_input_files) if batch_queue_mode else bool(input_value)
+            enabled = bool(has_input and output_value and self._worker_thread is None)
             _set_widget_enabled(self.run_button, enabled)
 
         def _pick_input(self) -> None:
@@ -1140,6 +1450,57 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 self.input_path_edit.setText(path)
                 if not self.output_path_edit.text().strip():
                     self.output_path_edit.setText(str(default_gui_output_dir()))
+
+        def _pick_batch_files(self) -> None:
+            if filedialog is None:
+                return
+            raw_paths = filedialog.askopenfilenames(parent=self, title="选择多个论文文件")
+            if not raw_paths:
+                return
+            selected, ignored = filter_batch_import_paths(tuple(Path(item) for item in raw_paths))
+            self._batch_input_files = selected
+            self._batch_ignored_files = ignored
+            self._refresh_batch_input_display()
+
+        def _pick_batch_directory(self) -> None:
+            if filedialog is None:
+                return
+            raw_path = filedialog.askdirectory(parent=self, title="选择批量导入文件夹")
+            if not raw_path:
+                return
+            source_path = Path(raw_path)
+            selected, ignored = collect_docx_files_from_directory(
+                source_path,
+                recursive=self.recursive_checkbox.isChecked(),
+            )
+            self._batch_input_files = selected
+            self._batch_ignored_files = ignored
+            self._refresh_batch_input_display(source_path=source_path)
+
+        def _clear_batch_inputs(self) -> None:
+            self._batch_input_files = ()
+            self._batch_ignored_files = ()
+            self.input_path_edit.clear()
+            self.input_path_edit.setToolTip("")
+            self._refresh_execute_state()
+            self._set_status_text("批量导入列表已清空。")
+
+        def _refresh_batch_input_display(self, *, source_path: Path | None = None) -> None:
+            if not self._batch_input_files:
+                self.input_path_edit.setText("")
+                self.input_path_edit.setToolTip("")
+                self._refresh_execute_state()
+                return
+            prefix = f"{source_path}：" if source_path is not None else ""
+            text = f"{prefix}已导入 {len(self._batch_input_files)} 个 .docx 文件"
+            if self._batch_ignored_files:
+                text += f"，已忽略 {len(self._batch_ignored_files)} 个非 docx 文件"
+            self.input_path_edit.setText(text)
+            tooltip = [str(path) for path in self._batch_input_files[:20]]
+            if self._batch_ignored_files:
+                tooltip.extend(["", "已忽略：", *self._batch_ignored_files[:20]])
+            self.input_path_edit.setToolTip("\n".join(tooltip))
+            self._refresh_execute_state()
 
         def _pick_output_dir(self) -> None:
             if filedialog is None:
@@ -1170,15 +1531,22 @@ if _PYSIDE6_IMPORT_ERROR is None:
                     probe.unlink(missing_ok=True)
             return True, None
 
-        def _validate_before_run(self) -> tuple[Path, Path, str, bool] | None:
+        def _validate_before_run(self) -> tuple[Path | None, Path, str, bool, tuple[Path, ...]] | None:
             input_value = self.input_path_edit.text().strip()
             output_value = self.output_path_edit.text().strip()
             mode = self._mode()
+            batch_queue_mode = mode in {"batch-check", "batch-fix"}
 
-            if not input_value:
+            if not input_value and not batch_queue_mode:
                 self._set_status_text("请先选择输入文件或输入目录。")
                 if messagebox is not None:
                     messagebox.showwarning("缺少输入", "请先选择输入文件或输入目录。", parent=self)
+                return None
+            if batch_queue_mode and not self._batch_input_files:
+                text = "请先导入至少一个 .docx 文件，或从文件夹中批量读取。"
+                self._set_status_text(text)
+                if messagebox is not None:
+                    messagebox.showwarning("缺少批量输入", text, parent=self)
                 return None
             if not output_value:
                 self._set_status_text("请先选择输出目录。")
@@ -1195,14 +1563,8 @@ if _PYSIDE6_IMPORT_ERROR is None:
                     messagebox.showerror("输出目录不可用", output_error, parent=self)
                 return None
 
-            if mode == "batch-fix":
-                if not input_path.exists() or not input_path.is_dir():
-                    text = "批量修复模式下，输入路径必须是已存在目录。"
-                    self._set_status_text(text)
-                    if messagebox is not None:
-                        messagebox.showwarning("输入目录无效", text, parent=self)
-                    return None
-                return input_path, output_dir, mode, self.recursive_checkbox.isChecked()
+            if batch_queue_mode:
+                return None, output_dir, mode, self.recursive_checkbox.isChecked(), self._batch_input_files
 
             if not input_path.exists():
                 text = "输入文件不存在。"
@@ -1216,7 +1578,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 if messagebox is not None:
                     messagebox.showwarning("输入文件无效", text, parent=self)
                 return None
-            return input_path, output_dir, mode, False
+            return input_path, output_dir, mode, False, ()
 
         def _set_single_file_mode(self, mode: str) -> None:
             index = self.mode_combo.findData(mode)
@@ -1227,9 +1589,14 @@ if _PYSIDE6_IMPORT_ERROR is None:
             controls = (
                 self.check_mode_button,
                 self.fix_mode_button,
+                self.batch_check_mode_button,
+                self.batch_fix_mode_button,
                 self.run_button,
                 self.reset_button,
                 self.input_browse_button,
+                self.batch_files_button,
+                self.batch_folder_button,
+                self.clear_batch_button,
                 self.output_browse_button,
                 self.mode_combo,
                 self.recursive_checkbox,
@@ -1246,11 +1613,14 @@ if _PYSIDE6_IMPORT_ERROR is None:
             if validated is None:
                 return
 
-            input_path, output_dir, mode, recursive = validated
+            input_path, output_dir, mode, recursive, batch_input_files = validated
             self._set_busy(True)
             self.summary_text.clear()
             self.detail_text.clear()
+            self.task_list.clear()
             self.artifact_list.clear()
+            self._task_records = []
+            self._selected_task_file_name = None
             self._set_result_overview(
                 state_text="正在执行，请稍候……",
                 auto_fixed=0,
@@ -1264,9 +1634,16 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.output_label.setText(f"最近输出：{output_dir}")
 
             self._worker_thread = QThread(self)
-            self._worker = _GuiWorker(mode=mode, input_path=input_path, output_dir=output_dir, recursive=recursive)
+            self._worker = _GuiWorker(
+                mode=mode,
+                input_path=input_path,
+                output_dir=output_dir,
+                recursive=recursive,
+                batch_input_files=batch_input_files,
+            )
             self._worker.moveToThread(self._worker_thread)
             self._worker_thread.started.connect(self._worker.run)
+            self._worker.task_updated.connect(self._handle_task_progress)
             self._worker.finished.connect(self._handle_worker_result)
             self._worker.finished.connect(self._worker_thread.quit)
             self._worker.finished.connect(self._worker.deleteLater)
@@ -1280,11 +1657,28 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self._set_busy(False)
 
         def _handle_worker_result(self, result: object) -> None:
+            if isinstance(result, GuiBatchQueueExecutionResult):
+                self._apply_batch_queue_result(result)
+                return
             if isinstance(result, GuiBatchExecutionResult):
                 self._apply_batch_result(result)
                 return
             if isinstance(result, GuiExecutionResult):
                 self._apply_single_result(result)
+
+        def _handle_task_progress(self, task: object) -> None:
+            if not isinstance(task, BatchTaskRecord):
+                return
+            for index, current in enumerate(self._task_records):
+                if current.file_name == task.file_name and current.file_path == task.file_path:
+                    self._task_records[index] = task
+                    break
+            else:
+                self._task_records.append(task)
+            if self._selected_task_file_name is None:
+                self._selected_task_file_name = task.file_name
+            self._refresh_task_list()
+            self._apply_batch_queue_overview_from_tasks()
 
         def _apply_single_result(self, result: GuiExecutionResult) -> None:
             self.detail_text.setPlainText(format_gui_result(result))
@@ -1373,6 +1767,128 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 self._set_status_text("批量修复结束，但存在失败或摘要异常。")
                 if result.error_text and messagebox is not None:
                     messagebox.showerror("批量修复未完全成功", result.error_text, parent=self)
+
+        def _apply_batch_queue_result(self, result: GuiBatchQueueExecutionResult) -> None:
+            self._task_records = list(result.tasks)
+            self.detail_text.setPlainText(format_gui_batch_queue_result(result))
+            self._last_output_dir = result.output_dir
+            self._last_fixed_docx_file = None
+            self._last_report_file = None
+            self._last_user_summary_file = None
+            self._artifact_paths = ()
+            self._refresh_task_list()
+            self._apply_batch_queue_overview_from_tasks()
+            if self._task_records:
+                if self._selected_task_file_name is None:
+                    self._selected_task_file_name = self._task_records[0].file_name
+                self._show_task_detail_by_name(self._selected_task_file_name)
+            else:
+                self.summary_text.setPlainText("当前没有可执行的 .docx 文件。")
+                self.artifact_list.clear()
+            _set_widget_enabled(self.open_output_button, result.output_dir.exists())
+            _set_widget_enabled(self.open_fixed_docx_button, False)
+            _set_widget_enabled(self.open_report_button, False)
+            self._set_user_summary_action_state()
+
+            if result.failed > 0:
+                self._set_status_text("批量任务已完成，但存在失败文件。")
+            elif result.total_files == 0:
+                self._set_status_text("批量任务已完成，但没有可处理的 .docx 文件。")
+            else:
+                self._set_status_text("批量任务已完成，可按状态筛选并查看单任务摘要。")
+
+        def _apply_batch_queue_overview_from_tasks(self) -> None:
+            total = len(self._task_records)
+            pending = sum(1 for item in self._task_records if item.status == "pending")
+            running = sum(1 for item in self._task_records if item.status == "running")
+            succeeded = sum(1 for item in self._task_records if item.status == "success")
+            failed = sum(1 for item in self._task_records if item.status == "failed")
+            if running > 0:
+                state_text = f"批量任务执行中：{running} 个处理中，{pending} 个待处理。"
+                next_step = "下一步：可先观察任务状态，完成后点选单个任务查看中文摘要。"
+            elif failed > 0:
+                state_text = f"批量任务已完成，但有 {failed} 个失败，{succeeded} 个成功。"
+                next_step = "下一步：按“失败”筛选，先查看错误信息，再回到成功任务查看对应产物。"
+            elif total == 0:
+                state_text = "当前还没有批量任务。"
+                next_step = "下一步：导入多个 .docx 文件或选择一个包含论文的文件夹。"
+            else:
+                state_text = f"批量任务已完成，{succeeded} 个任务处理成功。"
+                next_step = "下一步：点选任一任务，查看用户版摘要，并按需要打开产物。"
+            self._set_result_overview(
+                state_text=state_text,
+                auto_fixed=succeeded,
+                not_fixed=failed,
+                manual_review=pending + running,
+                reference_reminder=0,
+                reference_blocking=0,
+                next_step=next_step,
+            )
+
+        def _refresh_task_list(self) -> None:
+            filter_value = str(self.task_filter_combo.currentData())
+            self.task_list.clear()
+            for task in self._task_records:
+                if filter_value != "all" and task.status != filter_value:
+                    continue
+                item = QListWidgetItem(f"{task.file_name} | {task.status}")
+                item.setData(Qt.UserRole, task.file_name)
+                item.setToolTip(str(task.file_path))
+                self.task_list.addItem(item)
+                if self._selected_task_file_name == task.file_name:
+                    item.setSelected(True)
+
+        def _on_task_selection_changed(self) -> None:
+            item = self.task_list.currentItem()
+            if item is None:
+                return
+            task_name = item.data(Qt.UserRole)
+            if not isinstance(task_name, str):
+                return
+            self._selected_task_file_name = task_name
+            self._show_task_detail_by_name(task_name)
+
+        def _show_task_detail_by_name(self, task_name: str | None) -> None:
+            if not task_name:
+                return
+            task = next((item for item in self._task_records if item.file_name == task_name), None)
+            if task is None:
+                return
+            self.summary_text.setPlainText(self._build_batch_task_summary_text(task))
+            self.detail_text.setPlainText(format_batch_task_detail(task))
+            self._apply_task_artifacts(task)
+
+        def _build_batch_task_summary_text(self, task: BatchTaskRecord) -> str:
+            summary_path_raw = task.artifact_paths.get("user_summary_md")
+            if isinstance(summary_path_raw, str) and summary_path_raw.strip():
+                summary_path = Path(summary_path_raw)
+                if summary_path.exists():
+                    return summary_path.read_text(encoding="utf-8")
+            return format_batch_task_detail(task)
+
+        def _apply_task_artifacts(self, task: BatchTaskRecord) -> None:
+            self.artifact_list.clear()
+            self._last_fixed_docx_file = self._pick_existing_path(task.artifact_paths.get("fixed_docx"))
+            self._last_report_file = self._pick_existing_path(
+                task.artifact_paths.get("technical_report_md"),
+                task.artifact_paths.get("report_md"),
+                task.artifact_paths.get("technical_report_json"),
+                task.artifact_paths.get("report_json"),
+            )
+            self._last_user_summary_file = self._pick_existing_path(task.artifact_paths.get("user_summary_md"))
+            self._last_output_dir = self._pick_existing_path(task.artifact_paths.get("output_dir")) or self._last_output_dir
+            self._set_user_summary_action_state()
+            _set_widget_enabled(self.open_fixed_docx_button, self._last_fixed_docx_file is not None)
+            _set_widget_enabled(self.open_report_button, self._last_report_file is not None)
+            _set_widget_enabled(self.open_output_button, self._last_output_dir is not None)
+            for key, value in task.artifact_paths.items():
+                path = Path(value)
+                if not path.exists() or path.is_dir():
+                    continue
+                item = QListWidgetItem(f"{key} | {path.name}")
+                item.setData(Qt.UserRole, str(path))
+                item.setToolTip(str(path))
+                self.artifact_list.addItem(item)
 
         def _build_primary_summary_for_single(self, result: GuiExecutionResult) -> str:
             payload = result.payload if isinstance(result.payload, dict) else {}
@@ -1626,8 +2142,13 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.output_path_edit.setText(str(default_gui_output_dir()))
             self.mode_combo.setCurrentIndex(0)
             self.recursive_checkbox.setChecked(True)
+            self._batch_input_files = ()
+            self._batch_ignored_files = ()
+            self._task_records = []
+            self._selected_task_file_name = None
             self.summary_text.clear()
             self.detail_text.clear()
+            self.task_list.clear()
             self.artifact_list.clear()
             self._last_output_dir = None
             self._last_report_file = None

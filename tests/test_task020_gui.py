@@ -431,3 +431,96 @@ def test_user_summary_action_buttons_state_sync(tmp_path: Path) -> None:
     app._set_user_summary_action_state()
     assert app.open_user_summary_button.state == "normal"
     assert app.export_user_summary_button.state == "normal"
+
+
+def test_filter_batch_import_paths_ignores_non_docx_files(tmp_path: Path) -> None:
+    paths = (
+        tmp_path / "a.docx",
+        tmp_path / "b.txt",
+        tmp_path / "c.DOCX",
+        tmp_path / "d.md",
+    )
+    selected, ignored = gui.filter_batch_import_paths(paths)
+
+    assert selected == (tmp_path / "a.docx", tmp_path / "c.DOCX")
+    assert ignored == ("b.txt", "d.md")
+
+
+def test_execute_gui_batch_queue_tracks_status_flow_and_result_visibility(tmp_path: Path) -> None:
+    input_a = tmp_path / "a.docx"
+    input_b = tmp_path / "b.docx"
+    input_a.write_bytes(b"a")
+    input_b.write_bytes(b"b")
+    output_dir = tmp_path / "out"
+
+    progress: list[gui.BatchTaskRecord] = []
+
+    def _stub_check_runner(
+        input_file: Path,
+        *,
+        report_json_out: Path | None = None,
+        report_md_out: Path | None = None,
+    ) -> tuple[int, dict, Path | None, Path | None]:
+        assert report_json_out is not None
+        assert report_md_out is not None
+        _touch(report_json_out)
+        _touch(report_md_out)
+        if input_file.name == "a.docx":
+            user_summary_md = report_md_out.parent / "a.user_summary.md"
+            user_summary_md.write_text("# 用户版结果摘要\n\n已完成检查，当前未发现需要你额外处理的问题", encoding="utf-8")
+            return (
+                0,
+                {
+                    "summary": {
+                        "auto_fix_rule_count": 0,
+                        "detected_not_auto_modified_count": 0,
+                        "manual_review_required_count": 0,
+                    },
+                    "user_summary": {
+                        "overall_status": "已完成检查，当前未发现需要你额外处理的问题",
+                    },
+                    "artifacts": {
+                        "technical_report_md": str(report_md_out),
+                        "technical_report_json": str(report_json_out),
+                        "user_summary_md": str(user_summary_md),
+                    },
+                },
+                report_json_out,
+                report_md_out,
+            )
+        raise RuntimeError("boom: 模拟失败")
+
+    result = gui.execute_gui_batch_queue(
+        input_files=(input_a, input_b),
+        output_dir=output_dir,
+        mode="check",
+        progress_callback=progress.append,
+        check_runner=_stub_check_runner,
+    )
+
+    assert result.total_files == 2
+    assert result.succeeded == 1
+    assert result.failed == 1
+    assert [item.status for item in result.tasks] == ["success", "failed"]
+    assert result.tasks[0].started_at is not None
+    assert result.tasks[0].finished_at is not None
+    assert result.tasks[0].summary == "已完成检查，当前未发现需要你额外处理的问题"
+    assert result.tasks[1].error_message is not None
+    assert "boom:" in result.tasks[1].error_message
+
+    progress_statuses = [(item.file_name, item.status) for item in progress]
+    assert ("a.docx", "running") in progress_statuses
+    assert ("a.docx", "success") in progress_statuses
+    assert ("b.docx", "running") in progress_statuses
+    assert ("b.docx", "failed") in progress_statuses
+
+    queue_text = gui.format_gui_batch_queue_result(result)
+    assert "a.docx | success | 已完成检查" in queue_text
+    assert "b.docx | failed | 处理失败：boom:" in queue_text
+
+    success_detail = gui.format_batch_task_detail(result.tasks[0])
+    failed_detail = gui.format_batch_task_detail(result.tasks[1])
+    assert "中文结果摘要" in success_detail
+    assert "已完成检查，当前未发现需要你额外处理的问题" in success_detail
+    assert "错误信息" in failed_detail
+    assert "boom: 模拟失败" in failed_detail
