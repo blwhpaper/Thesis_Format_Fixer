@@ -1,0 +1,10 @@
+services:
+  appsmith:
+    image: appsmith/appsmith-ce
+    container_name: thesis-format-fixer-appsmith
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./stacks:/appsmith-stacks
+    restart: unless-stopped

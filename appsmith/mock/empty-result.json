@@ -1,0 +1,38 @@
+{
+  "job_id": null,
+  "status": "idle",
+  "mode": "check",
+  "input_filename": null,
+  "output_filename": null,
+  "summary": {},
+  "user_summary": {
+    "overall_status": "尚未开始处理",
+    "processing_label": "检查模式",
+    "categorized": {
+      "auto_processed": [],
+      "detected_not_auto_fixed": [],
+      "manual_review_required": []
+    },
+    "counts": {
+      "auto_processed": 0,
+      "detected_not_auto_fixed": 0,
+      "manual_review_required": 0
+    },
+    "key_issues": [],
+    "next_steps": [
+      "上传一个论文文件后开始处理"
+    ],
+    "artifacts": []
+  },
+  "artifacts": {
+    "input_file": null,
+    "report_json": null,
+    "report_md": null,
+    "user_summary_md": null,
+    "fixed_docx": null,
+    "download_fixed_docx_url": null,
+    "download_report_md_url": null
+  },
+  "error": null,
+  "issue_rows": []
+}

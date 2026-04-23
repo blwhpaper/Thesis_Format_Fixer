@@ -1,0 +1,100 @@
+{
+  "app": {
+    "name": "论文格式工具",
+    "pages": [
+      {
+        "name": "首页",
+        "sections": [
+          {
+            "id": "hero",
+            "title": "顶部应用标题与模式切换",
+            "widgets": [
+              "页面标题",
+              "模式切换按钮组",
+              "状态提示标签"
+            ]
+          },
+          {
+            "id": "singleFile",
+            "title": "单文件处理卡片",
+            "widgets": [
+              "文件选择器",
+              "执行按钮",
+              "重置按钮",
+              "最近一次处理说明"
+            ]
+          },
+          {
+            "id": "batchFile",
+            "title": "批量处理卡片",
+            "widgets": [
+              "目录占位说明",
+              "即将开放标签",
+              "批量规则说明折叠区"
+            ]
+          },
+          {
+            "id": "summary",
+            "title": "结果摘要卡片",
+            "widgets": [
+              "总体状态卡",
+              "已自动修复统计",
+              "检测到异常但未自动修改统计",
+              "需人工复核统计"
+            ]
+          },
+          {
+            "id": "details",
+            "title": "详细问题表格",
+            "widgets": [
+              "筛选器",
+              "问题表格",
+              "空状态提示"
+            ]
+          },
+          {
+            "id": "downloads",
+            "title": "产物下载区",
+            "widgets": [
+              "修复后文档按钮",
+              "检查报告按钮",
+              "用户摘要按钮"
+            ]
+          },
+          {
+            "id": "manualReview",
+            "title": "人工复核说明区",
+            "widgets": [
+              "复核说明文本",
+              "下一步建议列表",
+              "展开更多说明"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "bindings": {
+    "pageState": {
+      "mode": "check | fix",
+      "resultPreset": "empty | check | fix | failure"
+    },
+    "futureApiSlots": [
+      {
+        "purpose": "提交单文件检查",
+        "method": "POST",
+        "endpoint": "/api/jobs/check"
+      },
+      {
+        "purpose": "提交单文件修复",
+        "method": "POST",
+        "endpoint": "/api/jobs/fix"
+      },
+      {
+        "purpose": "轮询任务结果",
+        "method": "GET",
+        "endpoint": "/api/jobs/{job_id}"
+      }
+    ]
+  }
+}

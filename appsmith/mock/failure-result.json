@@ -1,0 +1,41 @@
+{
+  "job_id": "mock-failed-001",
+  "status": "failed",
+  "mode": "fix",
+  "input_filename": "broken-file.docx",
+  "output_filename": null,
+  "summary": {},
+  "user_summary": {
+    "overall_status": "处理失败",
+    "processing_label": "修复模式",
+    "categorized": {
+      "auto_processed": [],
+      "detected_not_auto_fixed": [],
+      "manual_review_required": []
+    },
+    "counts": {
+      "auto_processed": 0,
+      "detected_not_auto_fixed": 0,
+      "manual_review_required": 0
+    },
+    "key_issues": [
+      "文件内容无法正常解析"
+    ],
+    "next_steps": [
+      "请确认文件可以在本地正常打开",
+      "如仍失败，请改用检查模式或更换文件后重试"
+    ],
+    "artifacts": []
+  },
+  "artifacts": {
+    "input_file": "/mock/input/broken-file.docx",
+    "report_json": null,
+    "report_md": null,
+    "user_summary_md": null,
+    "fixed_docx": null,
+    "download_fixed_docx_url": null,
+    "download_report_md_url": null
+  },
+  "error": "文件结构异常，暂时无法完成处理。",
+  "issue_rows": []
+}

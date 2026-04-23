@@ -1,0 +1,83 @@
+{
+  "job_id": "mock-fix-001",
+  "status": "completed",
+  "mode": "fix",
+  "input_filename": "sample-thesis.docx",
+  "output_filename": "sample-thesis.fixed.docx",
+  "summary": {
+    "issues_total": 10
+  },
+  "user_summary": {
+    "overall_status": "已完成自动修复并生成结果文件",
+    "processing_label": "修复模式",
+    "categorized": {
+      "auto_processed": [
+        "目录页码对齐已自动修复",
+        "页眉页脚样式已自动修复",
+        "正文首行缩进已自动修复"
+      ],
+      "detected_not_auto_fixed": [
+        "参考文献缩写格式不统一",
+        "部分表格跨页样式不稳定"
+      ],
+      "manual_review_required": [
+        "封面信息与学校模板字段需要人工核对",
+        "英文摘要大小写风格需人工确认"
+      ]
+    },
+    "counts": {
+      "auto_processed": 3,
+      "detected_not_auto_fixed": 2,
+      "manual_review_required": 2
+    },
+    "key_issues": [
+      "多数基础格式已自动处理",
+      "仍有参考文献与摘要相关问题需要复核"
+    ],
+    "next_steps": [
+      "下载修复后文档并打开核查",
+      "优先处理“需人工复核”区域"
+    ],
+    "artifacts": [
+      "修复后文档",
+      "检查报告（Markdown）",
+      "用户摘要（Markdown）"
+    ]
+  },
+  "artifacts": {
+    "input_file": "/mock/input/sample-thesis.docx",
+    "report_json": "/mock/output/sample-thesis.report.json",
+    "report_md": "/mock/output/sample-thesis.report.md",
+    "user_summary_md": "/mock/output/fix.user_summary.md",
+    "fixed_docx": "/mock/output/sample-thesis.fixed.docx",
+    "download_fixed_docx_url": "/api/jobs/mock-fix-001/download/fixed-docx",
+    "download_report_md_url": "/api/jobs/mock-fix-001/download/report-md"
+  },
+  "error": null,
+  "issue_rows": [
+    {
+      "rule_code": "A-002",
+      "title": "目录页码未右对齐",
+      "section": "目录",
+      "severity": "中",
+      "auto_fixed": "是",
+      "suggestion": "已自动修复，建议打开文档快速复核"
+    },
+    {
+      "rule_code": "R-021",
+      "title": "参考文献缩写格式不统一",
+      "section": "参考文献",
+      "severity": "高",
+      "auto_fixed": "否",
+      "suggestion": "根据学校模板统一期刊、卷号和页码写法"
+    },
+    {
+      "rule_code": "S-007",
+      "title": "英文摘要标题大小写风格待确认",
+      "section": "摘要",
+      "severity": "中",
+      "auto_fixed": "否",
+      "suggestion": "按学校模板或导师意见做人工调整"
+    }
+  ]
+}
