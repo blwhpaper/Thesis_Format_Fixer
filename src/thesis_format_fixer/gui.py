@@ -314,8 +314,7 @@ def format_gui_result(result: GuiExecutionResult) -> str:
     processing_label = "修复" if result.mode == "fix" else "检查"
     lines = [
         "GUI 用户版结果面板",
-        f"- 本次操作类型：{result.mode}",
-        f"- 操作说明：{processing_label}",
+        f"- 执行模式：{processing_label}（{result.mode}）",
         f"- 输入文件：{result.input_file}",
         f"- 输出目录：{result.output_dir}",
         f"- 执行状态：{'成功' if result.success else '失败'}（exit_code={result.exit_code}）",
@@ -339,6 +338,7 @@ def format_gui_result(result: GuiExecutionResult) -> str:
                 ),
                 f"- 需要人工复核：{user_summary.get('manual_review_required_count', summary.get('manual_review_required_count', 0))}",
                 f"- 参考文献相关提醒：{user_summary.get('reference_reminder_count', summary.get('reference_finding_count', 0))}",
+                f"- 参考文献阻断：{user_summary.get('reference_blocking_count', summary.get('reference_blocking_count', 0))}",
                 f"- 脚注相关提醒：{user_summary.get('footnote_reminder_count', 0)}",
                 f"- 其他提示：{user_summary.get('other_reminder_count', 0)}",
             ]
@@ -389,7 +389,8 @@ def format_gui_result(result: GuiExecutionResult) -> str:
             + f"- 已自动修复 / 已自动处理：{summary.get('auto_fix_rule_count', 0)}\n"
             + f"- 检测到异常但未自动修改：{summary.get('detected_not_auto_modified_count', 0)}\n"
             + f"- 需要人工复核：{summary.get('manual_review_required_count', 0)}\n"
-            + f"- 参考文献相关提醒：{summary.get('reference_finding_count', 0)}"
+            + f"- 参考文献相关提醒：{summary.get('reference_finding_count', 0)}\n"
+            + f"- 参考文献阻断：{summary.get('reference_blocking_count', 0)}"
         )
 
     lines.extend(["", "查看与导出"])
@@ -739,7 +740,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.output_path_edit.setText(str(default_gui_output_dir()))
             self._refresh_mode_ui()
             self._refresh_execute_state()
-            self._set_status_text("请选择输入文件；输出目录已默认指向用户主目录下的 ThesisFormatFixerOutput。")
+            self._set_status_text("请选择单个 .docx 文件；输出目录已默认指向用户主目录下的 ThesisFormatFixerOutput。")
 
         def _status_parent(self) -> object | None:
             return self
@@ -766,12 +767,12 @@ if _PYSIDE6_IMPORT_ERROR is None:
             layout.setContentsMargins(0, 0, 0, 0)
             layout.setSpacing(6)
 
-            title = QLabel("Thesis Format Fixer", container)
+            title = QLabel("单文件论文批改工作台", container)
             title.setObjectName("heroTitle")
             layout.addWidget(title)
 
             subtitle = QLabel(
-                "按“选择输入 -> 确认模式 -> 开始执行 -> 查看结果与输出文件”的顺序完成检查或修复。",
+                "按“选择 .docx 文件 -> 选择检查格式或修复格式 -> 开始执行 -> 查看用户摘要与产物入口”的顺序完成单文件处理。",
                 container,
             )
             subtitle.setObjectName("heroSubtitle")
@@ -780,7 +781,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             return container
 
         def _build_input_group(self) -> QGroupBox:
-            group = QGroupBox("第 1 步：选择输入与处理方式", self)
+            group = QGroupBox("第 1 步：选择论文文件", self)
             layout = QFormLayout(group)
             layout.setHorizontalSpacing(12)
             layout.setVerticalSpacing(12)
@@ -806,38 +807,48 @@ if _PYSIDE6_IMPORT_ERROR is None:
             output_row.addWidget(self.output_browse_button)
             layout.addRow("输出目录", self._wrap_row(output_row))
 
-            mode_row = QHBoxLayout()
             self.mode_combo = QComboBox(group)
-            self.mode_combo.addItem("仅检查", "check")
-            self.mode_combo.addItem("检查并修复", "fix")
-            self.mode_combo.addItem("批量修复（兼容入口）", "batch-fix")
+            self.mode_combo.addItem("检查格式", "check")
+            self.mode_combo.addItem("修复格式", "fix")
             self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
-            mode_row.addWidget(self.mode_combo)
             self.recursive_checkbox = QCheckBox("递归扫描子目录", group)
             self.recursive_checkbox.setChecked(True)
             self.recursive_checkbox.toggled.connect(self._refresh_execute_state)
-            mode_row.addWidget(self.recursive_checkbox)
-            mode_row.addStretch(1)
-            layout.addRow("处理模式", self._wrap_row(mode_row))
+            self.mode_combo.hide()
+            self.recursive_checkbox.hide()
 
             self.mode_hint_label = QLabel(group)
             self.mode_hint_label.setObjectName("modeHintLabel")
             self.mode_hint_label.setWordWrap(True)
-            layout.addRow("模式说明", self.mode_hint_label)
+            layout.addRow("文件要求", self.mode_hint_label)
             return group
 
         def _build_actions_group(self) -> QGroupBox:
-            group = QGroupBox("第 2 步：执行与查看输出", self)
+            group = QGroupBox("第 2 步：选择操作并执行", self)
             layout = QVBoxLayout(group)
             layout.setSpacing(10)
 
             helper = QLabel(
-                "主操作只有“开始执行”；完成后可在下方继续打开修复结果、技术报告、用户摘要或输出目录。",
+                "先选择“检查格式”或“修复格式”，再点击“开始执行”。完成后可直接打开修复后文档、用户摘要、技术报告和输出目录。",
                 group,
             )
             helper.setObjectName("sectionHelper")
             helper.setWordWrap(True)
             layout.addWidget(helper)
+
+            mode_row = QHBoxLayout()
+            mode_row.setSpacing(10)
+            self.check_mode_button = QPushButton("检查格式", group)
+            self.check_mode_button.setCheckable(True)
+            self.check_mode_button.clicked.connect(lambda: self._set_single_file_mode("check"))
+            mode_row.addWidget(self.check_mode_button)
+
+            self.fix_mode_button = QPushButton("修复格式", group)
+            self.fix_mode_button.setCheckable(True)
+            self.fix_mode_button.clicked.connect(lambda: self._set_single_file_mode("fix"))
+            mode_row.addWidget(self.fix_mode_button)
+            mode_row.addStretch(1)
+            layout.addLayout(mode_row)
 
             primary_row = QHBoxLayout()
             primary_row.setSpacing(10)
@@ -885,7 +896,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
             return group
 
         def _build_results_group(self) -> QGroupBox:
-            group = QGroupBox("第 3 步：查看结果摘要与输出文件", self)
+            group = QGroupBox("第 3 步：查看结果摘要与产物入口", self)
             layout = QVBoxLayout(group)
             layout.setSpacing(10)
 
@@ -906,9 +917,13 @@ if _PYSIDE6_IMPORT_ERROR is None:
             self.auto_fixed_value_label = self._build_metric_card("已自动处理", "0")
             self.not_fixed_value_label = self._build_metric_card("未自动修改", "0")
             self.manual_review_value_label = self._build_metric_card("人工复核", "0")
+            self.reference_reminder_value_label = self._build_metric_card("参考文献提醒", "0")
+            self.reference_blocking_value_label = self._build_metric_card("参考文献阻断", "0")
             metrics_grid.addWidget(self.auto_fixed_value_label.parentWidget(), 0, 0)
             metrics_grid.addWidget(self.not_fixed_value_label.parentWidget(), 0, 1)
             metrics_grid.addWidget(self.manual_review_value_label.parentWidget(), 0, 2)
+            metrics_grid.addWidget(self.reference_reminder_value_label.parentWidget(), 1, 0)
+            metrics_grid.addWidget(self.reference_blocking_value_label.parentWidget(), 1, 1)
             overview_layout.addLayout(metrics_grid)
 
             self.next_step_label = QLabel("执行完成后，这里会直接告诉你最重要的结果和下一步。", overview)
@@ -1012,6 +1027,12 @@ if _PYSIDE6_IMPORT_ERROR is None:
                     background: #9db6ad;
                     border-color: #9db6ad;
                 }
+                QPushButton:checked {
+                    background: #d8ebe4;
+                    border: 1px solid #2f6f5e;
+                    color: #234c40;
+                    font-weight: 700;
+                }
                 QWidget#metricCard {
                     background: #f7f4ed;
                     border: 1px solid #e0d9cd;
@@ -1096,9 +1117,11 @@ if _PYSIDE6_IMPORT_ERROR is None:
             if batch_mode:
                 self.mode_hint_label.setText("批量修复会扫描目录中的 .docx，并统一输出批处理摘要与逐文件结果。")
             elif self._mode() == "fix":
-                self.mode_hint_label.setText("检查并修复会生成修复后文件，同时保留技术报告和用户摘要，适合正式处理。")
+                self.mode_hint_label.setText("仅支持单个 .docx 文件。修复格式会生成修复后文档，并同时保留用户摘要和技术报告。")
             else:
-                self.mode_hint_label.setText("仅检查不会修改原文档，适合先看风险和确认人工复核项。")
+                self.mode_hint_label.setText("仅支持单个 .docx 文件。检查格式不会修改原文档，适合先看异常项和人工复核项。")
+            self.check_mode_button.setChecked(self._mode() == "check")
+            self.fix_mode_button.setChecked(self._mode() == "fix")
 
         def _refresh_execute_state(self) -> None:
             input_value = self.input_path_edit.text().strip()
@@ -1188,15 +1211,22 @@ if _PYSIDE6_IMPORT_ERROR is None:
                     messagebox.showwarning("输入文件不存在", text, parent=self)
                 return None
             if input_path.is_dir() or input_path.suffix.lower() != ".docx":
-                text = "请输入有效的 .docx 论文文件。"
+                text = "仅支持 .docx 论文文件，请重新选择。"
                 self._set_status_text(text)
                 if messagebox is not None:
                     messagebox.showwarning("输入文件无效", text, parent=self)
                 return None
             return input_path, output_dir, mode, False
 
+        def _set_single_file_mode(self, mode: str) -> None:
+            index = self.mode_combo.findData(mode)
+            if index >= 0:
+                self.mode_combo.setCurrentIndex(index)
+
         def _set_busy(self, busy: bool) -> None:
             controls = (
+                self.check_mode_button,
+                self.fix_mode_button,
                 self.run_button,
                 self.reset_button,
                 self.input_browse_button,
@@ -1226,6 +1256,8 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 auto_fixed=0,
                 not_fixed=0,
                 manual_review=0,
+                reference_reminder=0,
+                reference_blocking=0,
                 next_step="处理过程中会生成适合普通用户阅读的摘要，并在完成后集中提供文件入口。",
             )
             self._set_status_text("正在执行，请稍候……")
@@ -1369,6 +1401,7 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 f"检测到但未自动修改数量：{summary.get('detected_not_auto_modified_count', 0)}",
                 f"需要人工复核数量：{summary.get('manual_review_required_count', 0)}",
                 f"参考文献相关提醒数量：{summary.get('reference_finding_count', 0)}",
+                f"参考文献阻断数量：{summary.get('reference_blocking_count', 0)}",
             ]
             if result.mode == "fix":
                 lines.extend(
@@ -1400,6 +1433,12 @@ if _PYSIDE6_IMPORT_ERROR is None:
                     summary.get("manual_review_required_count", 0),
                 )
             )
+            reference_reminder = int(
+                user_summary.get("reference_reminder_count", summary.get("reference_finding_count", 0))
+            )
+            reference_blocking = int(
+                user_summary.get("reference_blocking_count", summary.get("reference_blocking_count", 0))
+            )
             overall_status = str(user_summary.get("overall_status", "")).strip()
             if not overall_status:
                 overall_status = "执行成功。" if result.success else "执行失败。"
@@ -1423,6 +1462,8 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 auto_fixed=auto_fixed,
                 not_fixed=not_fixed,
                 manual_review=manual_review,
+                reference_reminder=reference_reminder,
+                reference_blocking=reference_blocking,
                 next_step=next_step,
             )
 
@@ -1441,6 +1482,8 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 auto_fixed=result.succeeded,
                 not_fixed=result.failed,
                 manual_review=max(result.total_files - result.succeeded - result.failed, 0),
+                reference_reminder=0,
+                reference_blocking=0,
                 next_step=next_step,
             )
 
@@ -1451,12 +1494,16 @@ if _PYSIDE6_IMPORT_ERROR is None:
             auto_fixed: int,
             not_fixed: int,
             manual_review: int,
+            reference_reminder: int,
+            reference_blocking: int,
             next_step: str,
         ) -> None:
             self.result_state_label.setText(state_text)
             self.auto_fixed_value_label.setText(str(auto_fixed))
             self.not_fixed_value_label.setText(str(not_fixed))
             self.manual_review_value_label.setText(str(manual_review))
+            self.reference_reminder_value_label.setText(str(reference_reminder))
+            self.reference_blocking_value_label.setText(str(reference_blocking))
             self.next_step_label.setText(next_step)
 
         def _collect_artifacts(self, artifacts: dict[str, Any], generated_files: tuple[Path, ...]) -> tuple[Path, ...]:
@@ -1597,9 +1644,11 @@ if _PYSIDE6_IMPORT_ERROR is None:
                 auto_fixed=0,
                 not_fixed=0,
                 manual_review=0,
+                reference_reminder=0,
+                reference_blocking=0,
                 next_step="执行完成后，这里会直接告诉你最重要的结果和下一步。",
             )
-            self._set_status_text("已重置。请选择新的输入文件；输出目录已恢复为默认路径。")
+            self._set_status_text("已重置。请选择新的 .docx 文件；输出目录已恢复为默认路径。")
             self._refresh_execute_state()
 
         def _on_status_text_changed(self, text: str) -> None:

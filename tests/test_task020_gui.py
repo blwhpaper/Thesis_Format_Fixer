@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 import thesis_format_fixer.gui as gui
 
 
@@ -79,8 +81,16 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
         return (
             0,
             {
-                "summary": {"reference_finding_count": 2, "block_low_confidence_count": 0},
-                "user_summary": {"overall_status": "已完成", "top_actions": [{"title": "人工复核", "reason": "有未自动修改项"}]},
+                "summary": {
+                    "reference_finding_count": 2,
+                    "reference_blocking_count": 1,
+                    "block_low_confidence_count": 0,
+                },
+                "user_summary": {
+                    "overall_status": "已完成",
+                    "reference_blocking_count": 1,
+                    "top_actions": [{"title": "人工复核", "reason": "有未自动修改项"}],
+                },
                 "artifacts": {"user_summary_md": str(user_summary_md)},
             },
             report_json_out,
@@ -104,6 +114,7 @@ def test_execute_gui_task_check_success_path(tmp_path: Path) -> None:
     assert "概览结果" in formatted
     assert "分类结果" in formatted
     assert "参考文献相关提醒" in formatted
+    assert "参考文献阻断" in formatted
     assert "打开摘要文件" in formatted
     assert "技术字段（次级展示）" in formatted
 
@@ -138,6 +149,7 @@ def test_format_gui_result_fix_shows_three_artifact_exits(tmp_path: Path) -> Non
                 "processing_type": "fix",
                 "processing_label": "修复",
                 "overall_status": "已完成修复",
+                "reference_blocking_count": 0,
                 "category_summaries": [
                     {"category_title": "已自动修复 / 已自动处理", "count": 1, "description": "系统已完成安全范围内的自动处理。"}
                 ],
@@ -164,6 +176,18 @@ def test_format_gui_result_fix_shows_three_artifact_exits(tmp_path: Path) -> Non
     assert "技术版报告（Markdown）" in formatted
     assert "打开摘要文件" in formatted
     assert "打开输出目录" in formatted
+
+
+def test_execute_gui_task_rejects_non_docx_input(tmp_path: Path) -> None:
+    input_txt = tmp_path / "demo.txt"
+    input_txt.write_text("fake", encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"\.docx"):
+        gui.execute_gui_task(
+            input_file=input_txt,
+            output_dir=tmp_path / "out",
+            mode="check",
+        )
 
 
 def test_execute_gui_task_fix_failure_path(tmp_path: Path) -> None:

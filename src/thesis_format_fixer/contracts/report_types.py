@@ -160,6 +160,7 @@ class UserResultSummary:
     detected_not_auto_modified_count: int
     manual_review_required_count: int
     reference_reminder_count: int
+    reference_blocking_count: int
     footnote_reminder_count: int
     other_reminder_count: int
     key_issues: tuple[str, ...]

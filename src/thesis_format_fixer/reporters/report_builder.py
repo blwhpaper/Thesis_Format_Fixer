@@ -209,6 +209,7 @@ def build_user_result_summary(
     detected_not_auto_modified_count = int(summary.get("detected_not_auto_modified_count", 0))
     manual_review_required_count = int(summary.get("manual_review_required_count", 0))
     reference_reminder_count = int(summary.get("reference_finding_count", 0))
+    reference_blocking_count = int(summary.get("reference_blocking_count", 0))
     footnote_reminder_count = len(footnote_items)
     other_reminder_count = len(other_tip_items)
     technical_summary = {key: int(summary.get(key, 0)) for key in TECHNICAL_SUMMARY_KEYS}
@@ -228,6 +229,8 @@ def build_user_result_summary(
         key_issues.append(f"有 {manual_review_required_count} 项内容需要你人工复核。")
     if reference_reminder_count > 0:
         key_issues.append(f"参考文献相关提醒 {reference_reminder_count} 项。")
+    if reference_blocking_count > 0:
+        key_issues.append(f"其中参考文献阻断 {reference_blocking_count} 项，建议优先处理。")
     for item in detected_but_not_fixed_items[:3]:
         key_issues.append(f"重点关注：{item.issue_title}。")
     for item in manual_review_items[:2]:
@@ -242,6 +245,8 @@ def build_user_result_summary(
         next_steps.append("再完成“需要人工复核”的项目，避免遗漏。")
     if reference_reminder_count > 0:
         next_steps.append("重点核对参考文献条目格式和顺序。")
+    if reference_blocking_count > 0:
+        next_steps.append("优先处理参考文献阻断项，避免影响最终提交。")
     next_steps.append("处理完成后，打开详细报告逐项复查。")
 
     category_summaries = (
@@ -268,6 +273,12 @@ def build_user_result_summary(
             category_title="参考文献相关提醒",
             count=reference_reminder_count,
             description="建议重点检查参考文献条目格式、顺序和类型标识。",
+        ),
+        UserSummaryCategorySummary(
+            category_key="reference_blocking",
+            category_title="参考文献阻断",
+            count=reference_blocking_count,
+            description="这些参考文献问题更可能影响提交前通过，建议优先复核。",
         ),
         UserSummaryCategorySummary(
             category_key="footnote",
@@ -303,6 +314,7 @@ def build_user_result_summary(
         detected_not_auto_modified_count=detected_not_auto_modified_count,
         manual_review_required_count=manual_review_required_count,
         reference_reminder_count=reference_reminder_count,
+        reference_blocking_count=reference_blocking_count,
         footnote_reminder_count=footnote_reminder_count,
         other_reminder_count=other_reminder_count,
         key_issues=tuple(key_issues),
@@ -327,13 +339,13 @@ def render_user_summary_markdown(summary: UserResultSummary, *, payload: dict[st
         "",
         "## 概览结果",
         "",
-        f"- 本次操作类型：{summary.processing_type}",
-        f"- 操作说明：{summary.processing_label}",
+        f"- 执行模式：{summary.processing_label}（{summary.processing_type}）",
         f"- 总体状态：{summary.overall_status}",
         f"- 已自动修复 / 已自动处理：{summary.auto_fixed_count}",
         f"- 检测到异常但未自动修改：{summary.detected_not_auto_modified_count}",
         f"- 需要人工复核：{summary.manual_review_required_count}",
         f"- 参考文献相关提醒：{summary.reference_reminder_count}",
+        f"- 参考文献阻断：{summary.reference_blocking_count}",
         f"- 脚注相关提醒：{summary.footnote_reminder_count}",
         f"- 其他提示：{summary.other_reminder_count}",
         "",

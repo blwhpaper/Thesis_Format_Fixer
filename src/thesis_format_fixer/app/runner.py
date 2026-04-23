@@ -82,6 +82,7 @@ def _serialize_user_summary(user_summary: Any) -> dict[str, Any]:
         "detected_not_auto_modified_count": user_summary.detected_not_auto_modified_count,
         "manual_review_required_count": user_summary.manual_review_required_count,
         "reference_reminder_count": user_summary.reference_reminder_count,
+        "reference_blocking_count": user_summary.reference_blocking_count,
         "footnote_reminder_count": user_summary.footnote_reminder_count,
         "other_reminder_count": user_summary.other_reminder_count,
         "key_issues": list(user_summary.key_issues),

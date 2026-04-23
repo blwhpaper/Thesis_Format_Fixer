@@ -24,6 +24,7 @@ def _base_payload() -> dict:
 def test_user_summary_contains_auto_fixed_section_when_auto_fix_exists() -> None:
     payload = _base_payload()
     payload["summary"]["auto_fix_rule_count"] = 1
+    payload["summary"]["reference_blocking_count"] = 1
     payload["sections"]["auto_fixed"] = [
         {"rule_id": "FR-4.2-01", "rule_name": "中文摘要标题文本为摘 要", "status": "fixed"}
     ]
@@ -31,13 +32,15 @@ def test_user_summary_contains_auto_fixed_section_when_auto_fix_exists() -> None
     md = render_user_summary_markdown(summary, payload=payload)
     assert summary.processing_type == "check"
     assert summary.processing_label == "检查"
+    assert summary.reference_blocking_count == 1
     assert summary.category_summaries[0].category_title == "已自动修复 / 已自动处理"
     assert "## 已自动修改（明细）" in md
     assert "中文摘要标题文本为摘 要" in md
     assert "已处理" in md
     assert "## 概览结果" in md
-    assert "本次操作类型：check" in md
+    assert "执行模式：检查（check）" in md
     assert "## 分类结果" in md
+    assert "参考文献阻断：1" in md
     assert "## 技术字段（次级）" in md
 
 
