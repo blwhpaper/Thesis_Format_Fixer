@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>规则与帮助</title>
+    <link rel="stylesheet" href="/appsmith/preview/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="nav-strip">
+        <a class="nav-link" href="/appsmith/preview/index.html">工作台首页</a>
+        <a class="nav-link" href="/appsmith/preview/single-file.html">单文件处理</a>
+        <a class="nav-link" href="/appsmith/preview/batch-placeholder.html">批量处理（预留）</a>
+        <a class="nav-link active" href="/appsmith/preview/help.html">规则与帮助</a>
+      </section>
+
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">规则与帮助</p>
+          <h1>使用说明与能力边界</h1>
+          <p class="hero-copy">
+            这里不发明新语义，只解释仓内现有 API 和报告字段，帮助普通用户理解“检查 / 修复 / 人工复核”分别代表什么。
+          </p>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <h2>模式差异</h2>
+            <span class="panel-tag">真实后端语义</span>
+          </div>
+          <ul class="plain-list">
+            <li>`check`：生成技术报告与用户摘要，不生成修订稿下载。</li>
+            <li>`fix`：会生成 `*.fixed.docx`，但当前仍受 V1 安全边界约束，不能描述成“全自动彻底修复”。</li>
+            <li>结果页必须同时展示“未自动修改”和“需人工复核”，避免误解成完全无人工参与。</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>结果三层结构</h2>
+            <span class="panel-tag">页面展示约定</span>
+          </div>
+          <ul class="plain-list">
+            <li>第一层：用户友好摘要，优先展示 `user_summary.overall_status`、`key_issues`、`next_steps`。</li>
+            <li>第二层：问题明细表，基于 `categorized` 三类结构化列表展开。</li>
+            <li>第三层：技术报告，直接展示原始 payload/JSON，不另造第二套报告结构。</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>下载项说明</h2>
+            <span class="panel-tag">只认 API 真值</span>
+          </div>
+          <ul class="plain-list">
+            <li>报告下载：仅当 `artifacts.download_report_md_url` 存在时展示按钮。</li>
+            <li>修订稿下载：仅当 `artifacts.download_fixed_docx_url` 存在时展示按钮。</li>
+            <li>若 fix 结果中没有修订稿下载地址，则页面明确提示“当前无可下载修订稿”。</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>常见失败原因</h2>
+            <span class="panel-tag">错误提示入口</span>
+          </div>
+          <ul class="plain-list">
+            <li>未选择文件。</li>
+            <li>上传的不是 `.docx`。</li>
+            <li>文件为空或结构异常。</li>
+            <li>API 未启动，或 Base URL 指向错误。</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+  </body>
+  </html>

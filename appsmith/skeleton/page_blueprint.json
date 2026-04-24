@@ -3,71 +3,94 @@
     "name": "论文格式工具",
     "pages": [
       {
-        "name": "首页",
+        "name": "工作台首页",
         "sections": [
           {
             "id": "hero",
-            "title": "顶部应用标题与模式切换",
+            "title": "顶部应用标题与当前能力说明",
             "widgets": [
               "页面标题",
-              "模式切换按钮组",
-              "状态提示标签"
+              "当前可用能力卡",
+              "当前预留能力卡"
             ]
           },
           {
-            "id": "singleFile",
-            "title": "单文件处理卡片",
+            "id": "entryCards",
+            "title": "主入口卡片区",
             "widgets": [
+              "单文件处理入口",
+              "批量处理预留入口",
+              "规则与帮助入口"
+            ]
+          },
+          {
+            "id": "quickStart",
+            "title": "简短操作步骤",
+            "widgets": [
+              "四步操作说明",
+              "本地预览提示"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "单文件处理页",
+        "sections": [
+          {
+            "id": "submit",
+            "title": "文件上传与提交区",
+            "widgets": [
+              "API Base URL 输入框",
+              "健康检查按钮",
               "文件选择器",
-              "执行按钮",
-              "重置按钮",
-              "最近一次处理说明"
+              "模式切换按钮组",
+              "提交按钮",
+              "重试按钮",
+              "重置按钮"
             ]
           },
           {
-            "id": "batchFile",
-            "title": "批量处理卡片",
+            "id": "status",
+            "title": "任务状态区",
             "widgets": [
-              "目录占位说明",
-              "即将开放标签",
-              "批量规则说明折叠区"
+              "job_id 展示",
+              "job status 展示",
+              "模式标签",
+              "摘要统计卡"
             ]
           },
           {
-            "id": "summary",
-            "title": "结果摘要卡片",
+            "id": "userSummary",
+            "title": "用户摘要区",
             "widgets": [
               "总体状态卡",
-              "已自动修复统计",
-              "检测到异常但未自动修改统计",
-              "需人工复核统计"
+              "重点问题列表",
+              "建议下一步列表"
             ]
           },
           {
             "id": "details",
-            "title": "详细问题表格",
+            "title": "问题明细区",
             "widgets": [
-              "筛选器",
-              "问题表格",
+              "分类问题表格",
+              "summary 技术统计标签",
               "空状态提示"
             ]
           },
           {
-            "id": "downloads",
-            "title": "产物下载区",
+            "id": "technical",
+            "title": "技术报告区",
             "widgets": [
-              "修复后文档按钮",
-              "检查报告按钮",
-              "用户摘要按钮"
+              "JSON Viewer"
             ]
           },
           {
-            "id": "manualReview",
-            "title": "人工复核说明区",
+            "id": "downloads",
+            "title": "下载区",
             "widgets": [
-              "复核说明文本",
-              "下一步建议列表",
-              "展开更多说明"
+              "报告下载按钮",
+              "修订稿下载按钮",
+              "无修订稿提示"
             ]
           }
         ]
@@ -76,8 +99,13 @@
   },
   "bindings": {
     "pageState": {
-      "mode": "check | fix",
-      "resultPreset": "empty | check | fix | failure"
+      "selectedFile": "File | null",
+      "selectedMode": "check | fix",
+      "currentJobId": "string | null",
+      "currentJobStatus": "idle | submitting | submitted | completed | failed",
+      "latestResultPayload": "JobPayload | null",
+      "latestArtifacts": "artifacts payload",
+      "latestError": "string | null"
     },
     "futureApiSlots": [
       {

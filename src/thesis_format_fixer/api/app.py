@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uvicorn
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 from .service import ApiJobError, ApiJobService
@@ -12,6 +13,13 @@ from .service import ApiJobError, ApiJobService
 def create_app(service: ApiJobService | None = None) -> FastAPI:
     app = FastAPI(title="Thesis Format Fixer API", version="0.1.0")
     job_service = service or ApiJobService()
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=False,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
     def get_service() -> ApiJobService:
         return job_service

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>批量处理预留页</title>
+    <link rel="stylesheet" href="/appsmith/preview/styles.css" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="nav-strip">
+        <a class="nav-link" href="/appsmith/preview/index.html">工作台首页</a>
+        <a class="nav-link" href="/appsmith/preview/single-file.html">单文件处理</a>
+        <a class="nav-link active" href="/appsmith/preview/batch-placeholder.html">批量处理（预留）</a>
+        <a class="nav-link" href="/appsmith/preview/help.html">规则与帮助</a>
+      </section>
+
+      <section class="hero-card">
+        <div>
+          <p class="eyebrow">批量处理</p>
+          <h1>当前仅保留占位，不提供真实执行</h1>
+          <p class="hero-copy">
+            仓内已有 `run_batch_fix()` 的本地能力，但当前 HTTP API 只提供单文件 `check/fix`。在新增批量 API 之前，这个入口不能伪装成已可在线执行。
+          </p>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <h2>为什么还不能接</h2>
+            <span class="panel-tag">真实限制</span>
+          </div>
+          <ul class="plain-list">
+            <li>当前不存在 `POST /api/jobs/batch-fix`。</li>
+            <li>也没有批量任务查询、逐文件明细查询或批量产物下载接口。</li>
+            <li>因此本轮只保留首页入口和说明页。</li>
+          </ul>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>后续最合理接法</h2>
+            <span class="panel-tag">二期建议</span>
+          </div>
+          <ul class="plain-list">
+            <li>新增批量任务提交 API，并复用现有 `run_batch_fix()` 结果结构。</li>
+            <li>增加批量任务状态查询与逐文件结果列表。</li>
+            <li>再把这个占位页升级为真实批量执行页。</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+  </body>
+  </html>

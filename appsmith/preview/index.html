@@ -3,146 +3,113 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>论文格式工具 UI 预览</title>
+    <title>论文格式工具工作台预览</title>
     <link rel="stylesheet" href="/appsmith/preview/styles.css" />
   </head>
   <body>
     <main class="page-shell">
-      <section class="hero-card">
+      <header class="hero-card">
         <div>
-          <p class="eyebrow">论文格式工具</p>
-          <h1>论文格式检查与修复工作台</h1>
-          <p class="hero-copy">先用 mock 数据验证页面结构与联动，后续再接入本地 Python 服务。</p>
+          <p class="eyebrow">Thesis Format Fixer</p>
+          <h1>论文格式整理工作台</h1>
+          <p class="hero-copy">
+            基于仓内现有单文件 HTTP API 的最小 Appsmith 页面预览。当前优先提供单文件检查/修复闭环，批量处理仍为后续能力。
+          </p>
         </div>
-        <div class="hero-actions">
-          <div class="mode-switch" role="tablist" aria-label="模式切换">
-            <button class="mode-button active" data-mode="check">检查模式</button>
-            <button class="mode-button" data-mode="fix">修复模式</button>
+        <div class="hero-side">
+          <div class="status-note">
+            <strong>当前可用</strong>
+            <p>单文件 `check` / `fix`、任务结果读取、技术报告下载、修订稿下载（仅 fix 成功时）</p>
           </div>
-          <label class="state-picker">
-            <span>页面状态</span>
-            <select id="stateSelect">
-              <option value="empty">空状态</option>
-              <option value="check">检查成功</option>
-              <option value="fix">修复成功</option>
-              <option value="failure">处理失败</option>
-            </select>
-          </label>
+          <div class="status-note muted">
+            <strong>当前预留</strong>
+            <p>批量 HTTP API、任务历史中心、规则在线目录</p>
+          </div>
         </div>
+      </header>
+
+      <section class="nav-strip">
+        <a class="nav-link active" href="/appsmith/preview/index.html">工作台首页</a>
+        <a class="nav-link" href="/appsmith/preview/single-file.html">单文件处理</a>
+        <a class="nav-link" href="/appsmith/preview/batch-placeholder.html">批量处理（预留）</a>
+        <a class="nav-link" href="/appsmith/preview/help.html">规则与帮助</a>
+      </section>
+
+      <section class="content-grid home-grid">
+        <article class="panel">
+          <div class="panel-header">
+            <h2>工具简介</h2>
+            <span class="panel-tag">MVP 主入口</span>
+          </div>
+          <p class="body-copy">
+            这个工作台面向普通用户，优先提供“上传一个 `.docx` 文件并执行检查或修复”的最小闭环。结果页会按“用户摘要 / 问题明细 / 技术报告”三层展示，避免把技术字段全部堆到同一层。
+          </p>
+        </article>
+
+        <article class="panel">
+          <div class="panel-header">
+            <h2>快速开始</h2>
+            <span class="panel-tag">4 步完成</span>
+          </div>
+          <ol class="step-list">
+            <li>打开“单文件处理”页并选择一个 `.docx` 文件。</li>
+            <li>选择“检查格式”或“修复格式”。</li>
+            <li>提交任务后读取 `job_id`，并查询 `GET /api/jobs/{job_id}`。</li>
+            <li>成功后查看三层结果，并按真实返回的下载项获取产物。</li>
+          </ol>
+        </article>
+      </section>
+
+      <section class="action-grid">
+        <article class="action-card primary">
+          <p class="summary-label">主链路</p>
+          <h2>单文件处理</h2>
+          <p>上传单篇论文，选择检查或修复，查看结构化结果并下载真实产物。</p>
+          <a class="primary-button as-link" href="/appsmith/preview/single-file.html">进入单文件处理页</a>
+        </article>
+
+        <article class="action-card muted-card">
+          <p class="summary-label">后续扩展</p>
+          <h2>批量处理（预留）</h2>
+          <p>仓内已有本地批量能力，但当前没有批量 HTTP API，本轮只保留入口与说明页。</p>
+          <a class="secondary-button as-link" href="/appsmith/preview/batch-placeholder.html">查看预留说明</a>
+        </article>
+
+        <article class="action-card">
+          <p class="summary-label">辅助入口</p>
+          <h2>规则与帮助</h2>
+          <p>解释当前能力边界、模式差异、常见错误和本地预览方式。</p>
+          <a class="secondary-button as-link" href="/appsmith/preview/help.html">打开说明页</a>
+        </article>
       </section>
 
       <section class="content-grid">
         <article class="panel">
           <div class="panel-header">
-            <h2>单文件处理</h2>
-            <span class="panel-tag">已接好后续 API 预留位</span>
+            <h2>本轮页面落地范围</h2>
+            <span class="panel-tag">真实边界</span>
           </div>
-          <div class="field-list">
-            <label>
-              <span>论文文件</span>
-              <input type="text" value="sample-thesis.docx" readonly />
-            </label>
-            <label>
-              <span>处理说明</span>
-              <input id="modeDescription" type="text" value="仅检测格式问题，不改原文件" readonly />
-            </label>
-          </div>
-          <div class="button-row">
-            <button class="primary-button">开始处理</button>
-            <button class="secondary-button">重置</button>
-          </div>
-          <p class="helper-copy">后续这里接入文件上传、任务提交和轮询查询。</p>
+          <ul class="plain-list">
+            <li>已落地：工作台首页。</li>
+            <li>已落地：单文件处理页。</li>
+            <li>补充入口：规则与帮助页。</li>
+            <li>占位页：批量处理说明页，不伪装成已可执行。</li>
+          </ul>
         </article>
 
         <article class="panel">
           <div class="panel-header">
-            <h2>批量处理</h2>
-            <span class="panel-tag muted">占位</span>
+            <h2>本地预览提示</h2>
+            <span class="panel-tag">保留现有 preview 机制</span>
           </div>
-          <p class="placeholder-copy">本轮先保留布局位置，后续可扩展为目录上传、队列进度与逐文件结果汇总。</p>
-          <details>
-            <summary>查看批量处理预留说明</summary>
-            <p>建议后续拆分为目录选择、执行队列、批量摘要和失败重试四块区域。</p>
-          </details>
-        </article>
-      </section>
-
-      <section class="summary-grid">
-        <article class="summary-card summary-main">
-          <p class="summary-label">当前状态</p>
-          <h2 id="overallStatus">尚未开始处理</h2>
-          <p id="processingLabel" class="summary-copy">检查模式</p>
-        </article>
-        <article class="summary-card">
-          <p class="summary-label">已自动修复</p>
-          <h3 id="autoProcessedCount">0</h3>
-          <p class="summary-copy">系统已直接处理完成的问题</p>
-        </article>
-        <article class="summary-card">
-          <p class="summary-label">检测到异常但未自动修改</p>
-          <h3 id="detectedCount">0</h3>
-          <p class="summary-copy">需要你确认后再决定是否调整</p>
-        </article>
-        <article class="summary-card">
-          <p class="summary-label">需人工复核</p>
-          <h3 id="manualReviewCount">0</h3>
-          <p class="summary-copy">建议优先逐项打开文档核对</p>
-        </article>
-      </section>
-
-      <section class="content-grid lower-grid">
-        <article class="panel span-two">
-          <div class="panel-header">
-            <h2>详细问题表</h2>
-            <span class="panel-tag">普通用户可读字段</span>
-          </div>
-          <div id="emptyState" class="empty-state">上传论文文件后，这里会展示详细问题与处理建议。</div>
-          <div class="table-wrap" id="tableWrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>规则编号</th>
-                  <th>问题标题</th>
-                  <th>所属区块</th>
-                  <th>严重级别</th>
-                  <th>是否自动修复</th>
-                  <th>处理建议</th>
-                </tr>
-              </thead>
-              <tbody id="issueTableBody"></tbody>
-            </table>
-          </div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-header">
-            <h2>产物下载区</h2>
-            <span class="panel-tag">后续接真实下载地址</span>
-          </div>
-          <div class="download-list" id="downloadList"></div>
-        </article>
-      </section>
-
-      <section class="content-grid lower-grid">
-        <article class="panel span-two">
-          <div class="panel-header">
-            <h2>人工复核说明</h2>
-            <span class="panel-tag">重点提示</span>
-          </div>
-          <div class="review-columns">
-            <div>
-              <h3>重点问题</h3>
-              <ul id="keyIssues"></ul>
-            </div>
-            <div>
-              <h3>建议下一步</h3>
-              <ul id="nextSteps"></ul>
-            </div>
-          </div>
+          <ul class="plain-list">
+            <li>启动 API：`thesis-format-fixer-api`。</li>
+            <li>在项目根目录启动静态预览：`python3 -m http.server 9000`。</li>
+            <li>打开 `http://127.0.0.1:9000/appsmith/preview/index.html`。</li>
+            <li>单文件页默认请求 `http://127.0.0.1:8000`，可在页面顶部调整。</li>
+          </ul>
         </article>
       </section>
     </main>
-
-    <script src="/appsmith/preview/app.js" defer></script>
   </body>
   </html>
