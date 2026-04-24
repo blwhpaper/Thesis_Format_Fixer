@@ -360,3 +360,14 @@
 2. 若继续推进在线批量能力，优先新增批量 HTTP API，而不是先做前端假页面。
 3. 若需要更完整下载体验，再补 `user_summary_md` 的显式下载 endpoint。
 4. 若未来要做真实异步任务，再补 `queued/running` 状态与更稳定的轮询协议。
+
+## 11. 收尾说明
+
+TASK-APPsmith-03 收尾阶段，单文件预览页已进一步去技术化：
+
+- 页面不再展示 `selectedFile`、`selectedMode`、`API Base URL`、健康检查入口。
+- 页面不再直出接口名、字段来源、路径名、payload key。
+- `job_id` 与内部状态明细不再作为用户可见信息展示。
+- 统计卡片仅保留用户可理解标题、数字和简短文案。
+- 问题明细表去掉 `rule_id`、原因分类等开发态字段展示。
+- 原始 JSON viewer 与 summary 技术 chips 已从用户页面移除。

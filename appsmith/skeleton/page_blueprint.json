@@ -40,8 +40,6 @@
             "id": "submit",
             "title": "文件上传与提交区",
             "widgets": [
-              "API Base URL 输入框",
-              "健康检查按钮",
               "文件选择器",
               "模式切换按钮组",
               "提交按钮",
@@ -53,9 +51,7 @@
             "id": "status",
             "title": "任务状态区",
             "widgets": [
-              "job_id 展示",
-              "job status 展示",
-              "模式标签",
+              "任务状态卡",
               "摘要统计卡"
             ]
           },
@@ -73,15 +69,7 @@
             "title": "问题明细区",
             "widgets": [
               "分类问题表格",
-              "summary 技术统计标签",
               "空状态提示"
-            ]
-          },
-          {
-            "id": "technical",
-            "title": "技术报告区",
-            "widgets": [
-              "JSON Viewer"
             ]
           },
           {
@@ -101,7 +89,6 @@
     "pageState": {
       "selectedFile": "File | null",
       "selectedMode": "check | fix",
-      "currentJobId": "string | null",
       "currentJobStatus": "idle | submitting | submitted | completed | failed",
       "latestResultPayload": "JobPayload | null",
       "latestArtifacts": "artifacts payload",

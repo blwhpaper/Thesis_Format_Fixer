@@ -12,18 +12,7 @@
         <div>
           <p class="eyebrow">单文件处理</p>
           <h1>上传论文并执行检查 / 修复</h1>
-          <p class="hero-copy">
-            这里只消费仓内现有单文件 API：提交任务、读取 `job_id`、查询结果、按真实返回展示摘要与下载项。
-          </p>
-        </div>
-        <div class="hero-side">
-          <div class="inline-meta">
-            <label class="field-stack">
-              <span>API Base URL</span>
-              <input id="apiBaseUrlInput" type="text" value="http://127.0.0.1:8000" />
-            </label>
-            <button id="healthCheckButton" class="secondary-button" type="button">检查 API 连通性</button>
-          </div>
+          <p class="hero-copy">选择文件后开始处理，查看结果摘要、问题明细和下载内容。</p>
         </div>
       </header>
 
@@ -37,8 +26,7 @@
       <section class="content-grid">
         <article class="panel">
           <div class="panel-header">
-            <h2>文件上传区</h2>
-            <span class="panel-tag">`selectedFile`</span>
+            <h2>选择文件</h2>
           </div>
           <div class="field-list">
             <label class="field-stack">
@@ -51,14 +39,13 @@
 
         <article class="panel">
           <div class="panel-header">
-            <h2>模式与提交</h2>
-            <span class="panel-tag">`selectedMode`</span>
+            <h2>开始处理</h2>
           </div>
           <div class="mode-switch" role="tablist" aria-label="检查或修复">
             <button class="mode-button active" data-mode="check" type="button">检查格式</button>
             <button class="mode-button" data-mode="fix" type="button">修复格式</button>
           </div>
-          <p class="helper-copy" id="modeDescription">检查模式只生成结果报告，不生成修订稿。</p>
+          <p class="helper-copy" id="modeDescription">检查模式会生成结果摘要和报告。</p>
           <div class="button-row">
             <button id="submitButton" class="primary-button" type="button">提交任务</button>
             <button id="retryButton" class="secondary-button" type="button">重试上次请求</button>
@@ -69,37 +56,31 @@
 
       <section class="summary-grid">
         <article class="summary-card summary-main">
-          <p class="summary-label">任务状态区</p>
-          <h2 id="jobStatusHeadline">尚未提交任务</h2>
+          <p class="summary-label">任务状态</p>
+          <h2 id="jobStatusHeadline">未开始</h2>
           <p id="jobStatusCopy" class="summary-copy">请选择文件并提交。</p>
-          <dl class="meta-pairs">
-            <div><dt>job_id</dt><dd id="jobIdValue">-</dd></div>
-            <div><dt>status</dt><dd id="jobStatusValue">idle</dd></div>
-            <div><dt>mode</dt><dd id="jobModeValue">check</dd></div>
-          </dl>
         </article>
         <article class="summary-card">
           <p class="summary-label">已自动处理</p>
           <h3 id="autoProcessedCount">0</h3>
-          <p class="summary-copy">来自 `user_summary.counts.auto_processed`</p>
+          <p class="summary-copy">已由系统自动完成</p>
         </article>
         <article class="summary-card">
           <p class="summary-label">未自动修改</p>
           <h3 id="detectedCount">0</h3>
-          <p class="summary-copy">来自 `user_summary.counts.detected_not_auto_fixed`</p>
+          <p class="summary-copy">已检测到但未自动修改</p>
         </article>
         <article class="summary-card">
           <p class="summary-label">需人工复核</p>
           <h3 id="manualReviewCount">0</h3>
-          <p class="summary-copy">来自 `user_summary.counts.manual_review_required`</p>
+          <p class="summary-copy">仍需你手动检查确认</p>
         </article>
       </section>
 
       <section class="content-grid lower-grid">
         <article class="panel">
           <div class="panel-header">
-            <h2>用户摘要区</h2>
-            <span class="panel-tag">优先展示 `user_summary`</span>
+            <h2>用户摘要</h2>
           </div>
           <div class="status-box" id="overallStatusBox">暂无结果。</div>
           <div class="review-columns">
@@ -117,11 +98,10 @@
         <article class="panel">
           <div class="panel-header">
             <h2>下载区</h2>
-            <span class="panel-tag">只展示真实下载项</span>
           </div>
           <div id="downloadList" class="download-list"></div>
           <div class="status-box subtle" id="downloadHint">
-            修复模式下若 API 未返回 `download_fixed_docx_url`，这里会明确提示当前无可下载修订稿。
+            当前没有可下载内容时，会在这里显示提示。
           </div>
         </article>
       </section>
@@ -129,46 +109,22 @@
       <section class="content-grid lower-grid">
         <article class="panel span-two">
           <div class="panel-header">
-            <h2>问题明细区</h2>
-            <span class="panel-tag">来自 `categorized` / `summary`</span>
+            <h2>问题明细</h2>
           </div>
-          <div id="tableEmptyState" class="empty-state">结果返回后，这里会按三类问题展开结构化明细。</div>
+          <div id="tableEmptyState" class="empty-state">结果返回后，这里会显示需要你关注的问题。</div>
           <div class="table-wrap" id="tableWrap" hidden>
             <table>
               <thead>
                 <tr>
                   <th>类别</th>
-                  <th>标题</th>
-                  <th>状态</th>
-                  <th>规则 ID</th>
-                  <th>原因分类</th>
-                  <th>建议下一步</th>
+                  <th>问题</th>
+                  <th>当前情况</th>
+                  <th>建议处理</th>
                 </tr>
               </thead>
               <tbody id="detailTableBody"></tbody>
             </table>
           </div>
-          <div class="summary-inline" id="summaryCounts"></div>
-        </article>
-      </section>
-
-      <section class="content-grid lower-grid">
-        <article class="panel span-two">
-          <div class="panel-header">
-            <h2>技术报告区</h2>
-            <span class="panel-tag">原始 payload / JSON viewer</span>
-          </div>
-          <pre id="technicalReportViewer" class="json-viewer">{}</pre>
-        </article>
-      </section>
-
-      <section class="content-grid lower-grid">
-        <article class="panel span-two">
-          <div class="panel-header">
-            <h2>错误信息区</h2>
-            <span class="panel-tag">`latestError`</span>
-          </div>
-          <div id="errorBox" class="status-box subtle">当前没有错误。</div>
         </article>
       </section>
     </main>

@@ -12,18 +12,16 @@
         <div>
           <p class="eyebrow">Thesis Format Fixer</p>
           <h1>论文格式整理工作台</h1>
-          <p class="hero-copy">
-            基于仓内现有单文件 HTTP API 的最小 Appsmith 页面预览。当前优先提供单文件检查/修复闭环，批量处理仍为后续能力。
-          </p>
+          <p class="hero-copy">先处理单篇论文，查看结果摘要、问题明细和下载内容。</p>
         </div>
         <div class="hero-side">
           <div class="status-note">
             <strong>当前可用</strong>
-            <p>单文件 `check` / `fix`、任务结果读取、技术报告下载、修订稿下载（仅 fix 成功时）</p>
+            <p>单文件检查、单文件修复、结果查看和下载</p>
           </div>
           <div class="status-note muted">
             <strong>当前预留</strong>
-            <p>批量 HTTP API、任务历史中心、规则在线目录</p>
+            <p>批量处理仍需后续接入</p>
           </div>
         </div>
       </header>
@@ -39,23 +37,21 @@
         <article class="panel">
           <div class="panel-header">
             <h2>工具简介</h2>
-            <span class="panel-tag">MVP 主入口</span>
           </div>
           <p class="body-copy">
-            这个工作台面向普通用户，优先提供“上传一个 `.docx` 文件并执行检查或修复”的最小闭环。结果页会按“用户摘要 / 问题明细 / 技术报告”三层展示，避免把技术字段全部堆到同一层。
+            这个工作台面向普通用户，支持上传一篇论文，完成检查或修复，并查看结果与下载内容。
           </p>
         </article>
 
         <article class="panel">
           <div class="panel-header">
             <h2>快速开始</h2>
-            <span class="panel-tag">4 步完成</span>
           </div>
           <ol class="step-list">
             <li>打开“单文件处理”页并选择一个 `.docx` 文件。</li>
             <li>选择“检查格式”或“修复格式”。</li>
-            <li>提交任务后读取 `job_id`，并查询 `GET /api/jobs/{job_id}`。</li>
-            <li>成功后查看三层结果，并按真实返回的下载项获取产物。</li>
+            <li>提交任务并等待结果。</li>
+            <li>查看摘要、问题明细和下载区。</li>
           </ol>
         </article>
       </section>
@@ -71,14 +67,14 @@
         <article class="action-card muted-card">
           <p class="summary-label">后续扩展</p>
           <h2>批量处理（预留）</h2>
-          <p>仓内已有本地批量能力，但当前没有批量 HTTP API，本轮只保留入口与说明页。</p>
+          <p>本轮仅保留入口和说明，暂不提供真实批量执行。</p>
           <a class="secondary-button as-link" href="/appsmith/preview/batch-placeholder.html">查看预留说明</a>
         </article>
 
         <article class="action-card">
           <p class="summary-label">辅助入口</p>
           <h2>规则与帮助</h2>
-          <p>解释当前能力边界、模式差异、常见错误和本地预览方式。</p>
+          <p>查看使用说明、常见问题和当前能力范围。</p>
           <a class="secondary-button as-link" href="/appsmith/preview/help.html">打开说明页</a>
         </article>
       </section>
@@ -87,7 +83,6 @@
         <article class="panel">
           <div class="panel-header">
             <h2>本轮页面落地范围</h2>
-            <span class="panel-tag">真实边界</span>
           </div>
           <ul class="plain-list">
             <li>已落地：工作台首页。</li>
@@ -100,13 +95,11 @@
         <article class="panel">
           <div class="panel-header">
             <h2>本地预览提示</h2>
-            <span class="panel-tag">保留现有 preview 机制</span>
           </div>
           <ul class="plain-list">
             <li>启动 API：`thesis-format-fixer-api`。</li>
             <li>在项目根目录启动静态预览：`python3 -m http.server 9000`。</li>
             <li>打开 `http://127.0.0.1:9000/appsmith/preview/index.html`。</li>
-            <li>单文件页默认请求 `http://127.0.0.1:8000`，可在页面顶部调整。</li>
           </ul>
         </article>
       </section>

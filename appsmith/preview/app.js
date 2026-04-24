@@ -21,12 +21,6 @@ function pageIsSingleFile() {
   return document.body && document.body.dataset.page === "single-file";
 }
 
-function getApiBaseUrl() {
-  const input = $("apiBaseUrlInput");
-  const value = input ? input.value.trim() : "";
-  return value || DEFAULT_API_BASE_URL;
-}
-
 function normalizeApiUrl(path) {
   const base = state.apiBaseUrl.replace(/\/$/, "");
   return `${base}${path}`;
@@ -41,12 +35,8 @@ function setMode(mode) {
   if (description) {
     description.textContent =
       state.selectedMode === "fix"
-        ? "修复模式会调用 POST /api/jobs/fix，并在成功时尝试展示修订稿下载。"
-        : "检查模式会调用 POST /api/jobs/check，只生成报告与摘要。";
-  }
-  const modeValue = $("jobModeValue");
-  if (modeValue) {
-    modeValue.textContent = state.selectedMode;
+        ? "修复模式会在完成后提供修订稿下载。"
+        : "检查模式会生成结果摘要和报告。";
   }
 }
 
@@ -62,20 +52,21 @@ function updateSelectedFileInfo() {
 
 function setError(message, tone = "error") {
   state.latestError = message || null;
-  const errorBox = $("errorBox");
-  if (!errorBox) return;
-  errorBox.className = `status-box ${tone === "error" ? "danger" : "subtle"}`;
-  errorBox.textContent = message || "当前没有错误。";
+  const statusCopy = $("jobStatusCopy");
+  if (!statusCopy || !message) return;
+  statusCopy.textContent = message;
+  statusCopy.className = `summary-copy ${tone === "error" ? "text-danger" : ""}`;
 }
 
 function setJobStatus(status, headline, copy) {
   state.currentJobStatus = status;
   const statusHeadline = $("jobStatusHeadline");
   const statusCopy = $("jobStatusCopy");
-  const statusValue = $("jobStatusValue");
   if (statusHeadline) statusHeadline.textContent = headline;
-  if (statusCopy) statusCopy.textContent = copy;
-  if (statusValue) statusValue.textContent = status;
+  if (statusCopy) {
+    statusCopy.textContent = copy;
+    statusCopy.className = "summary-copy";
+  }
 }
 
 function resetResultState() {
@@ -84,11 +75,8 @@ function resetResultState() {
   state.latestResultPayload = null;
   state.latestArtifacts = {};
   state.latestError = null;
-  const jobIdValue = $("jobIdValue");
-  if (jobIdValue) jobIdValue.textContent = "-";
-  setJobStatus("idle", "尚未提交任务", "请选择文件并提交。");
+  setJobStatus("idle", "未开始", "请选择文件并提交。");
   renderPayload(null);
-  setError("", "subtle");
 }
 
 function renderList(targetId, items, fallback) {
@@ -131,8 +119,6 @@ function flattenCategorizedRows(userSummary) {
         category: label,
         title: item.issue_title || item.rule_name || "(未命名问题)",
         handlingStatus: item.handling_status || "-",
-        ruleId: item.rule_id || "-",
-        reasonCategory: item.reason_category || "-",
         nextStep: item.next_step || item.issue_description || "-",
       });
     });
@@ -144,15 +130,13 @@ function renderDetailTable(payload) {
   const body = $("detailTableBody");
   const empty = $("tableEmptyState");
   const wrap = $("tableWrap");
-  const summaryCounts = $("summaryCounts");
-  if (!body || !empty || !wrap || !summaryCounts) return;
+  if (!body || !empty || !wrap) return;
 
   body.innerHTML = "";
   if (!payload) {
     wrap.hidden = true;
     empty.hidden = false;
-    empty.textContent = "结果返回后，这里会按三类问题展开结构化明细。";
-    summaryCounts.innerHTML = "";
+    empty.textContent = "结果返回后，这里会显示需要你关注的问题。";
     return;
   }
 
@@ -160,7 +144,7 @@ function renderDetailTable(payload) {
   if (!rows.length) {
     wrap.hidden = true;
     empty.hidden = false;
-    empty.textContent = "本次返回中没有可展开的问题明细，当前仅保留统计与技术 payload。";
+    empty.textContent = "这次没有需要单独展开的问题。";
   } else {
     wrap.hidden = false;
     empty.hidden = true;
@@ -170,22 +154,11 @@ function renderDetailTable(payload) {
         <td>${row.category}</td>
         <td>${row.title}</td>
         <td>${row.handlingStatus}</td>
-        <td>${row.ruleId}</td>
-        <td>${row.reasonCategory}</td>
         <td>${row.nextStep}</td>
       `;
       body.appendChild(tr);
     });
   }
-
-  const summary = payload.summary || {};
-  summaryCounts.innerHTML = `
-    <div class="summary-chip">auto_fix_rule_count: ${summary.auto_fix_rule_count ?? 0}</div>
-    <div class="summary-chip">detected_not_auto_modified_count: ${summary.detected_not_auto_modified_count ?? 0}</div>
-    <div class="summary-chip">manual_review_required_count: ${summary.manual_review_required_count ?? 0}</div>
-    <div class="summary-chip">reference_finding_count: ${summary.reference_finding_count ?? 0}</div>
-    <div class="summary-chip">reference_blocking_count: ${summary.reference_blocking_count ?? 0}</div>
-  `;
 }
 
 function renderDownloads(artifacts, mode) {
@@ -197,16 +170,16 @@ function renderDownloads(artifacts, mode) {
   const downloadItems = [];
   if (artifacts && artifacts.download_report_md_url) {
     downloadItems.push({
-      label: "下载技术报告（Markdown）",
+      label: "下载处理报告",
       url: normalizeApiUrl(artifacts.download_report_md_url),
-      description: "真实 API 下载地址",
+      description: "查看本次处理结果",
     });
   }
   if (artifacts && artifacts.download_fixed_docx_url) {
     downloadItems.push({
-      label: "下载修订稿 DOCX",
+      label: "下载修订稿",
       url: normalizeApiUrl(artifacts.download_fixed_docx_url),
-      description: "仅 fix 成功时返回",
+      description: "查看处理后的文档",
     });
   }
 
@@ -226,27 +199,26 @@ function renderDownloads(artifacts, mode) {
   if (!artifacts || !artifacts.download_report_md_url) {
     const row = document.createElement("div");
     row.className = "download-item muted-download";
-    row.innerHTML = "<div><strong>技术报告下载</strong><p>当前结果没有可下载的 Markdown 报告。</p></div>";
+    row.innerHTML = "<div><strong>处理报告</strong><p>当前还没有可下载的报告。</p></div>";
     list.appendChild(row);
   }
 
   if (mode === "fix" && (!artifacts || !artifacts.download_fixed_docx_url)) {
     const row = document.createElement("div");
     row.className = "download-item muted-download";
-    row.innerHTML = "<div><strong>修订稿下载</strong><p>当前无可下载修订稿。</p></div>";
+    row.innerHTML = "<div><strong>修订稿</strong><p>当前无可下载修订稿。</p></div>";
     list.appendChild(row);
   }
 
   if (mode === "check") {
-    hint.textContent = "检查模式下不会生成修订稿下载；若存在技术报告下载，会在上方单独展示。";
+    hint.textContent = "检查完成后，可在这里查看报告。";
   } else {
-    hint.textContent = "修复模式下若 API 返回 `download_fixed_docx_url`，这里会显示修订稿下载。";
+    hint.textContent = "修复完成后，如有修订稿，会在这里显示下载入口。";
   }
 }
 
 function renderPayload(payload) {
   const overallStatusBox = $("overallStatusBox");
-  const technicalViewer = $("technicalReportViewer");
   if (overallStatusBox) {
     overallStatusBox.textContent = payload?.user_summary?.overall_status || "暂无结果。";
   }
@@ -255,48 +227,27 @@ function renderPayload(payload) {
   renderList("nextSteps", payload?.user_summary?.next_steps || [], "处理完成后，这里会显示下一步建议。");
   renderDetailTable(payload);
   renderDownloads(payload?.artifacts || {}, payload?.mode || state.selectedMode);
-  if (technicalViewer) {
-    technicalViewer.textContent = JSON.stringify(payload || {}, null, 2);
-  }
 }
 
 function applyJobPayload(payload) {
   state.latestResultPayload = payload;
   state.latestArtifacts = payload && payload.artifacts ? payload.artifacts : {};
   state.currentJobId = payload?.job_id || null;
-  if ($("jobIdValue")) {
-    $("jobIdValue").textContent = state.currentJobId || "-";
-  }
   setMode(payload?.mode || state.selectedMode);
   renderPayload(payload);
 
   if (payload?.status === "failed") {
-    setJobStatus("failed", "任务执行失败", payload.error || "请检查上传文件和 API 状态后重试。");
+    setJobStatus("failed", "失败", payload.error || "请检查文件后重试。");
     setError(payload.error || "任务失败。");
     return;
   }
 
   if (payload?.status === "completed") {
-    setJobStatus("completed", "任务已完成", payload.user_summary?.overall_status || "结果已返回。");
-    setError("", "subtle");
+    setJobStatus("completed", "已完成", payload.user_summary?.overall_status || "结果已返回。");
     return;
   }
 
-  setJobStatus(payload?.status || "unknown", "任务处理中", "已拿到 job_id，正在读取最新结果。");
-}
-
-async function checkHealth() {
-  state.apiBaseUrl = getApiBaseUrl();
-  try {
-    const response = await fetch(normalizeApiUrl("/api/health"));
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const payload = await response.json();
-    setError(`API 连通正常：${payload.status}`, "subtle");
-  } catch (error) {
-    setError(`API 连通失败：${error.message || error}`);
-  }
+  setJobStatus(payload?.status || "unknown", "处理中", "正在获取结果，请稍候。");
 }
 
 async function pollJob(jobId, attempt = 0) {
@@ -313,7 +264,6 @@ async function pollJob(jobId, attempt = 0) {
 }
 
 async function submitJob() {
-  state.apiBaseUrl = getApiBaseUrl();
   if (!state.selectedFile) {
     setError("请先选择一个 .docx 文件。");
     return;
@@ -322,8 +272,7 @@ async function submitJob() {
   const formData = new FormData();
   formData.append("file", state.selectedFile);
   state.lastSubmittedMode = state.selectedMode;
-  setJobStatus("submitting", "任务提交中", "正在上传文件并创建任务。");
-  setError("", "subtle");
+  setJobStatus("submitting", "处理中", "正在提交，请稍候。");
 
   try {
     const response = await fetch(normalizeApiUrl(`/api/jobs/${state.selectedMode}`), {
@@ -335,10 +284,10 @@ async function submitJob() {
     if (!response.ok || !payload.job_id) {
       throw new Error(payload.error || `HTTP ${response.status}`);
     }
-    setJobStatus("submitted", "任务已提交", "已获取 job_id，开始查询任务结果。");
+    setJobStatus("submitted", "处理中", "正在获取结果，请稍候。");
     await pollJob(payload.job_id);
   } catch (error) {
-    setJobStatus("failed", "提交失败", "请检查 API 地址、文件内容或稍后重试。");
+    setJobStatus("failed", "失败", "请检查文件内容后重试。");
     setError(`提交失败：${error.message || error}`);
   }
 }
@@ -369,14 +318,6 @@ function bindSingleFilePage() {
     button.addEventListener("click", () => setMode(button.dataset.mode));
   });
 
-  $("apiBaseUrlInput").addEventListener("change", () => {
-    state.apiBaseUrl = getApiBaseUrl();
-  });
-  $("healthCheckButton").addEventListener("click", () => {
-    checkHealth().catch((error) => {
-      setError(`API 检查失败：${error.message || error}`);
-    });
-  });
   $("fileInput").addEventListener("change", (event) => {
     const [file] = event.target.files || [];
     state.selectedFile = file || null;
