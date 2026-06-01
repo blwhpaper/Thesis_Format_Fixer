@@ -21,6 +21,13 @@ from thesis_format_fixer.detectors.reference_parser import parse_reference_entry
 from thesis_format_fixer.formatters.task006_specials import execute_task006_docx
 from thesis_format_fixer.formatters.task008_a_surface import execute_task008_a_surface_docx
 from thesis_format_fixer.io.document_loader import load_document
+from thesis_format_fixer.io.rulebook import DEFAULT_PROFILE_PATH
+from thesis_format_fixer.profiles.engine import (
+    compose_profiles,
+    detect_profile_rule_key_gaps,
+    detect_rulebook_registry_drift,
+    load_profile,
+)
 from thesis_format_fixer.reporters.report_builder import build_report, summarize_a_class_hit_surface
 from thesis_format_fixer.review.reference_checkers import finding_to_payload, run_reference_checks
 from thesis_format_fixer.review.finding_prioritizer import build_reference_review_queue
@@ -337,14 +344,65 @@ def _write_markdown(path: Path, payload: dict[str, Any]) -> None:
         else:
             lines.append("- findings: (none)")
 
+    profile_drift = sections.get("profile_drift")
+    if profile_drift is not None:
+        lines.extend(["", "## Profile Drift", ""])
+        lines.append(f"- profile_path: {profile_drift.get('profile_path')}")
+        lines.append(f"- profile_id: {profile_drift.get('profile_id')}")
+        lines.append(f"- drift_finding_count: {profile_drift.get('drift_finding_count', 0)}")
+        findings = profile_drift.get("drift_findings", [])
+        if findings:
+            for item in findings:
+                lines.append(f"- {item}")
+        else:
+            lines.append("- (none)")
+
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _build_profile_drift_section(profile_path: Path | None) -> dict[str, Any]:
+    selected = profile_path or DEFAULT_PROFILE_PATH
+    if not selected.exists():
+        return {
+            "enabled": False,
+            "profile_path": str(selected),
+            "reason": "profile_not_found",
+            "drift_findings": [f"profile_missing:{selected}"],
+            "drift_finding_count": 1,
+        }
+
+    profile = load_profile(selected)
+    effective = compose_profiles(profile)
+    drift_findings = list(detect_rulebook_registry_drift(profile))
+    drift_findings.extend(f"boundary_violation:{item}" for item in effective.boundary_violations)
+
+    runtime = profile.raw.get("runtime", {})
+    required_rule_keys = runtime.get("required_rule_keys", []) if isinstance(runtime, dict) else []
+    if isinstance(required_rule_keys, (list, tuple, set)):
+        missing = detect_profile_rule_key_gaps(profile, required_rule_keys=required_rule_keys)
+        drift_findings.extend(f"missing_rule_key:{item}" for item in missing)
+
+    ordered_findings = sorted(set(drift_findings))
+    return {
+        "enabled": True,
+        "profile_path": str(selected),
+        "profile_id": profile.profile_id,
+        "display_name": profile.display_name,
+        "base_rulebook": profile.base_rulebook,
+        "rule_decision_count": len(profile.rule_decisions),
+        "drift_findings": ordered_findings,
+        "drift_finding_count": len(ordered_findings),
+        "effective_profile": effective.to_dict(),
+    }
 
 
 def _build_single_payload(
     input_file: Path,
     *,
     output_docx: Path | None = None,
+    profile_path: Path | None = None,
+    include_profile_drift: bool = False,
     review_mode: str = "off",
     review_targets: str | tuple[str, ...] | list[str] | None = None,
     review_local_model: str | None = None,
@@ -459,6 +517,8 @@ def _build_single_payload(
         },
         "manual_review_required": manual_review_required,
     }
+    if include_profile_drift:
+        sections["profile_drift"] = _build_profile_drift_section(profile_path)
 
     if report.intelligent_review is not None:
         sections["intelligent_review"] = _intelligent_review_payload(report.intelligent_review)
@@ -517,6 +577,7 @@ def _build_single_payload(
             "intelligent_review_degraded_count": len(report.intelligent_review.degraded_reasons)
             if report.intelligent_review is not None
             else 0,
+            "profile_drift_finding_count": sections.get("profile_drift", {}).get("drift_finding_count", 0),
         },
         "sections": sections,
         "capabilities": asdict(context.capabilities),
@@ -681,6 +742,8 @@ def _run_single(
     input_file: Path,
     *,
     output_docx: Path | None,
+    profile_path: Path | None = None,
+    include_profile_drift: bool = False,
     report_json_out: Path | None,
     report_md_out: Path | None,
     review_mode: str = "off",
@@ -695,6 +758,8 @@ def _run_single(
     payload = _build_single_payload(
         input_file,
         output_docx=output_docx,
+        profile_path=profile_path,
+        include_profile_drift=include_profile_drift,
         review_mode=review_mode,
         review_targets=review_targets,
         review_local_model=review_local_model,
@@ -766,6 +831,7 @@ def _merge_rule_updates(records: list[RuleExecutionRecord], updates: dict[str, A
 def run_check_with_details(
     input_file: Path,
     *,
+    profile_path: Path | None = None,
     report_json_out: Path | None = None,
     report_md_out: Path | None = None,
     review_mode: str = "off",
@@ -778,6 +844,8 @@ def run_check_with_details(
     return _run_single(
         input_file,
         output_docx=None,
+        profile_path=profile_path,
+        include_profile_drift=True,
         report_json_out=report_json_out,
         report_md_out=report_md_out,
         review_mode=review_mode,
@@ -791,6 +859,7 @@ def run_fix_with_details(
     input_file: Path,
     output_file: Path,
     *,
+    profile_path: Path | None = None,
     report_json_out: Path | None = None,
     report_md_out: Path | None = None,
     review_mode: str = "off",
@@ -809,6 +878,8 @@ def run_fix_with_details(
     return _run_single(
         input_file,
         output_docx=output_file,
+        profile_path=profile_path,
+        include_profile_drift=False,
         report_json_out=report_json_out,
         report_md_out=report_md_out,
         review_mode=review_mode,
@@ -821,6 +892,7 @@ def run_fix_with_details(
 def run_check(
     input_file: Path,
     *,
+    profile_path: Path | None = None,
     report_json_out: Path | None = None,
     report_md_out: Path | None = None,
     review_mode: str = "off",
@@ -831,6 +903,7 @@ def run_check(
     try:
         code, payload, _, _ = run_check_with_details(
             input_file,
+            profile_path=profile_path,
             report_json_out=report_json_out,
             report_md_out=report_md_out,
             review_mode=review_mode,
@@ -850,6 +923,7 @@ def run_fix(
     input_file: Path,
     output_file: Path,
     *,
+    profile_path: Path | None = None,
     report_json_out: Path | None = None,
     report_md_out: Path | None = None,
     review_mode: str = "off",
@@ -861,6 +935,7 @@ def run_fix(
         code, payload, report_json, report_md = run_fix_with_details(
             input_file,
             output_file,
+            profile_path=profile_path,
             report_json_out=report_json_out,
             report_md_out=report_md_out,
             review_mode=review_mode,
