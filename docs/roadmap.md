@@ -23,3 +23,4 @@
 - Profile drift report wired into check/report path (TASK-THESIS-OSS-004B): check output now exposes profile/rulebook/registry drift findings.
 - Word Review Adapter Audit (TASK-THESIS-OSS-005A): done, established python-docx comment-only adapter boundary.
 - Word Review Adapter Minimal Implementation (TASK-THESIS-OSS-005B): baseline comment-only adapter skeleton landed (apply/skip/duplicate/unsupported), no raw OOXML, no track changes.
+- Word Review Adapter Real DOCX Integration Test (TASK-THESIS-OSS-005C): landed real python-docx save/reopen comment integration coverage while keeping adapter comment-only.

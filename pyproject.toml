@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [{ name = "Thesis Format Fixer Contributors" }]
-dependencies = []
+dependencies = ["python-docx>=1.2.0"]
 
 [project.scripts]
 thesis-format-fixer = "thesis_format_fixer.cli:main"
