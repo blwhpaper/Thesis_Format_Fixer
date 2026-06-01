@@ -56,6 +56,8 @@ python -m thesis_format_fixer.gui
 
 建议流程：复制 sample profile，重命名后逐项替换规则字段并配套回归测试。
 
+当前已提供最小 `Generic Format Profile Engine` 骨架（profile 加载、`generic < institution < overrides` 合成、rule key 校验、rulebook/runtime 漂移检查）。
+
 ## Safe Fix Boundary
 
 - A 类：低风险自动修复

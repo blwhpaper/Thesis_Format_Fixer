@@ -10,6 +10,10 @@ ruleset:
     a_class_auto_fix: true
     b_class_check_only: true
     c_class_manual_review_only: true
+runtime:
+  rule_decisions:
+    FR-4.5-03: AUTO_CHECK
+    FR-4.6-03: AUTO_CHECK
 safety_boundary:
   never_overwrite_input_docx: true
   require_output_docx_for_fix: true

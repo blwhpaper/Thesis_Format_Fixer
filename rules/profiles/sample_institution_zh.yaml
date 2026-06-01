@@ -10,6 +10,10 @@ ruleset:
     a_class_auto_fix: true
     b_class_check_only: true
     c_class_manual_review_only: true
+runtime:
+  rule_decisions:
+    FR-4.5-03: REPORT_ONLY
+    FR-4.6-03: REPORT_ONLY
 customization_notes:
   - 可按本校规范替换标题字段词典、章节命名和参考文献细则。
   - 请在私有环境维护真实政策来源与样本文档。
