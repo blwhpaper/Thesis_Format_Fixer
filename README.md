@@ -80,6 +80,7 @@ python -m thesis_format_fixer.gui
 - 正文分节页码系统重构
 - 脚注按页重编
 - 复杂语义级参考文献重排/纠错
+- Word 批注/Review 模式的完整 CLI 集成（当前仅作为底层引擎就绪）
 
 ## Contributor / Agent Protocol
 

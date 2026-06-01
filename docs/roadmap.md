@@ -27,3 +27,4 @@
 - Word Review Adapter Feasibility Freeze (TASK-THESIS-OSS-005): done, V1 boundary frozen as comment-only adapter contract and safety invariants; runtime wiring deferred as explicit opt-in.
 
 - Review Profiles minimal strategy layer (TASK-THESIS-OSS-006): profile schema/validation/examples/tests added; runner/cli wiring deferred.
+- OSS Release & Codex Application Readiness (TASK-THESIS-OSS-007): done, repository audited for public safety, package readiness, and Codex agent instructions frozen.
