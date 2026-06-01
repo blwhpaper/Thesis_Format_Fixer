@@ -24,11 +24,13 @@ def test_default_profile_exists_and_loads() -> None:
     assert DEFAULT_PROFILE_PATH.exists()
     text = load_profile_text()
     assert "profile_id: generic_university_zh" in text
+    assert "base_rulebook: rules/FORMAT_RULEBOOK_v1.md" in text
 
 
 def test_sample_profile_loads() -> None:
     text = load_profile_text(SAMPLE_PROFILE_PATH)
     assert "profile_id: sample_institution_zh" in text
+    assert "base_rulebook: rules/FORMAT_RULEBOOK_v1.md" in text
 
 
 def test_missing_profile_raises_file_not_found(tmp_path: Path) -> None:

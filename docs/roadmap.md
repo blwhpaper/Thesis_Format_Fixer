@@ -19,3 +19,4 @@
 - Human-in-the-loop report and override support for B-class rules.
 - Coverage expansion and regression baselines.
 - Generic Format Profile Engine skeleton (TASK-THESIS-OSS-004): done as minimal runtime composition/check foundation.
+- Rulebook/runtime/profile source-of-truth alignment (TASK-THESIS-OSS-004A): default/profile/test path baseline aligned to v1.

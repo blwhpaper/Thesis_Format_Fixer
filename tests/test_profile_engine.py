@@ -2,6 +2,7 @@ from pathlib import Path
 
 from thesis_format_fixer.profiles.engine import (
     compose_profiles,
+    detect_profile_rule_key_gaps,
     detect_rulebook_registry_drift,
     load_profile,
     validate_profile_keys,
@@ -121,3 +122,41 @@ runtime:
     )
     issues = detect_rulebook_registry_drift(profile)
     assert any(item.startswith("base_rulebook_mismatch:") for item in issues)
+
+
+def test_detect_rulebook_registry_drift_reports_unknown_rule_key(tmp_path: Path) -> None:
+    profile = load_profile(
+        _write_profile(
+            tmp_path,
+            """
+profile_id: generic
+display_name: Generic
+ruleset:
+  base_rulebook: rules/FORMAT_RULEBOOK_v1.md
+runtime:
+  rule_decisions:
+    FR-UNKNOWN-001: AUTO_CHECK
+""".strip(),
+        )
+    )
+    issues = detect_rulebook_registry_drift(profile)
+    assert "unknown_rule_key:FR-UNKNOWN-001" in issues
+
+
+def test_detect_profile_rule_key_gaps_reports_missing_keys(tmp_path: Path) -> None:
+    profile = load_profile(
+        _write_profile(
+            tmp_path,
+            """
+profile_id: generic
+display_name: Generic
+ruleset:
+  base_rulebook: rules/FORMAT_RULEBOOK_v1.md
+runtime:
+  rule_decisions:
+    FR-4.5-03: AUTO_CHECK
+""".strip(),
+        )
+    )
+    missing = detect_profile_rule_key_gaps(profile, required_rule_keys={"FR-4.5-03", "FR-4.6-03"})
+    assert missing == ("FR-4.6-03",)

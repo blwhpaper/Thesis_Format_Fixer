@@ -218,4 +218,17 @@ def detect_rulebook_registry_drift(profile: FormatProfile) -> tuple[str, ...]:
         issues.append(f"registry_source_missing:{SOURCE_OF_TRUTH}")
     if profile.base_rulebook and not (ROOT_DIR / profile.base_rulebook).exists():
         issues.append(f"profile_rulebook_missing:{profile.base_rulebook}")
+    unknown = validate_profile_keys(profile)
+    for rule_id in unknown:
+        issues.append(f"unknown_rule_key:{rule_id}")
     return tuple(issues)
+
+
+def detect_profile_rule_key_gaps(
+    profile: FormatProfile,
+    *,
+    required_rule_keys: set[str] | tuple[str, ...] | list[str],
+) -> tuple[str, ...]:
+    required = set(required_rule_keys)
+    missing = sorted(rule_id for rule_id in required if rule_id not in profile.rule_decisions)
+    return tuple(missing)
