@@ -22,4 +22,4 @@
 - Rulebook/runtime/profile source-of-truth alignment (TASK-THESIS-OSS-004A): default/profile/test path baseline aligned to v1.
 - Profile drift report wired into check/report path (TASK-THESIS-OSS-004B): check output now exposes profile/rulebook/registry drift findings.
 - Word Review Adapter Audit (TASK-THESIS-OSS-005A): done, established python-docx comment-only adapter boundary.
-- Word Review Adapter Minimal Implementation (TASK-THESIS-OSS-005B): pending, pure python-docx comments, no raw OOXML, no track changes.
+- Word Review Adapter Minimal Implementation (TASK-THESIS-OSS-005B): baseline comment-only adapter skeleton landed (apply/skip/duplicate/unsupported), no raw OOXML, no track changes.
