@@ -74,6 +74,10 @@ python -m thesis_format_fixer.gui
 - 脚注按页重编
 - 复杂语义级参考文献重排/纠错
 
+## Contributor / Agent Protocol
+
+See [`CLAUDE.md`](CLAUDE.md) for governance, invariants, and operational rules before modifying this repository.
+
 ## License
 
 MIT，见 `LICENSE`。
