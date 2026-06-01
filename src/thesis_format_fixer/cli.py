@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     check_parser.add_argument("file", type=Path, help="Input DOCX path")
     check_parser.add_argument("--report-json", type=Path, help="Output report JSON path")
     check_parser.add_argument("--report-md", type=Path, help="Output report Markdown path")
+    check_parser.add_argument("--profile", type=Path, help="Profile YAML path for check-time drift audit")
     _add_review_options(check_parser)
 
     fix_parser = subparsers.add_parser("fix", help="Fix a DOCX file")
@@ -65,6 +66,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return run_check(
             args.file,
+            profile_path=args.profile,
             report_json_out=args.report_json,
             report_md_out=args.report_md,
             review_mode=args.review_mode,

@@ -23,6 +23,11 @@ thesis-format-fixer check samples/input/demo.docx \
   --report-json samples/output/demo.check.report.json \
   --report-md samples/output/demo.check.report.md
 
+# Check with explicit profile (for profile_drift audit)
+thesis-format-fixer check samples/input/demo.docx \
+  --profile rules/profiles/generic_university_zh.yaml \
+  --report-json samples/output/demo.check.report.json
+
 # Safe fix to a new file (never overwrite input)
 thesis-format-fixer fix samples/input/demo.docx \
   --out samples/output/demo.fixed.docx
