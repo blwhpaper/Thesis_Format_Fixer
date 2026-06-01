@@ -1,0 +1,16 @@
+profile_id: generic_university_zh
+schema_version: 1
+display_name: 通用高校论文格式配置（中文示例）
+language: zh-CN
+applicability: |
+  仅作为可配置样例，不代表任何具体高校，不保证适用于所有大学。
+ruleset:
+  base_rulebook: rules/FORMAT_RULEBOOK_v3.md
+  policy:
+    a_class_auto_fix: true
+    b_class_check_only: true
+    c_class_manual_review_only: true
+safety_boundary:
+  never_overwrite_input_docx: true
+  require_output_docx_for_fix: true
+  preserve_manual_fallback_and_error_boundary: true

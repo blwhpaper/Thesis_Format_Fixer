@@ -1,10 +1,10 @@
 # thesis-format-fixer
 
-`thesis-format-fixer` 是一个针对英文毕业论文 `.docx` 的格式检查/修复工具。
+可配置的 DOCX thesis formatting checker and safe fixer。
 
-当前阶段：**TASK-022 可交付版收口与验收**。
+本项目定位为通用工程框架：通过 profile 配置约束检查与安全修复边界，不绑定任何具体高校，不声称适用于所有大学。
 
-## 1. 安装
+## Installation
 
 ```bash
 python -m venv .venv
@@ -13,113 +13,73 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## 2. CLI 用法
+## CLI
 
 ```bash
-# 查看帮助
 thesis-format-fixer --help
 
-# 单文件检查（建议显式输出报告路径）
+# Check
 thesis-format-fixer check samples/input/demo.docx \
   --report-json samples/output/demo.check.report.json \
   --report-md samples/output/demo.check.report.md
 
-# 单文件修复（安全输出到新文件，不覆盖原文件）
+# Safe fix to a new file (never overwrite input)
 thesis-format-fixer fix samples/input/demo.docx \
   --out samples/output/demo.fixed.docx
 
-# 批量修复（默认递归）
+# Batch fix (recursive by default)
 thesis-format-fixer batch-fix samples/input \
   --out-dir samples/output/batch
-
-# 批量修复（仅当前目录）
-thesis-format-fixer batch-fix samples/input \
-  --out-dir samples/output/batch \
-  --no-recursive
 ```
 
-## 3. GUI 启动方式
+## GUI
 
 ```bash
 python -m thesis_format_fixer.gui
 ```
 
-GUI 模式支持：`check` / `fix` / `batch-fix`。
+## Sample Profiles
 
-## 4. 单文件处理流程（GUI/CLI 一致走 runner/report）
+- Default profile: `rules/profiles/generic_university_zh.yaml`
+- Sample institution profile: `rules/profiles/sample_institution_zh.yaml`
 
-1. 选择输入 `.docx`。
-2. 选择输出目录（GUI）或 `--out`（CLI fix）。
-3. 运行 `check` 或 `fix`。
-4. 在输出目录查看生成产物（报告或修复文件+报告）。
+说明：以上 profile 仅为示例模板。请在私有环境按本机构规范定制，不要将真实政策文件、真实学生论文或个人信息直接公开到仓库。
 
-## 5. 批量处理流程
+## Profile Customization
 
-1. 指定输入目录（默认递归扫描 `.docx`）。
-2. 指定输出目录。
-3. 执行 `batch-fix`。
-4. 查看批处理汇总：`batch_summary.json`、`batch_summary.md`。
-5. 查看每个文件的 `exit_code` 与产物路径。
+可按需调整：
 
-## 6. 输出文件说明
+- 标题/章节命名与词典
+- 参考文献格式约束
+- A/B/C 分级执行策略
+- 报告提示文案与人工复核口径
 
-### 单文件 `check`
+建议流程：复制 sample profile，重命名后逐项替换规则字段并配套回归测试。
 
-- `*.check.report.json`
-- `*.check.report.md`
+## Safe Fix Boundary
 
-### 单文件 `fix`
+- A 类：低风险自动修复
+- B 类：检测并报告，不自动改写关键结构
+- C 类：人工复核，不自动改写
+- `fix` 输出到新文件，不覆盖输入 `.docx`
+- 保留 manual/fallback/error boundary
 
-- `*.fixed.docx`
-- `*.report.json`
-- `*.report.md`
+## Out of Scope
 
-### 批量 `batch-fix`
+当前不包含：
 
-- 每个输入文件对应：`*.fixed.docx` + `*.report.json` + `*.report.md`
-- 保持输入目录的相对结构
-- 汇总文件：
-  - `batch_summary.json`
-  - `batch_summary.md`
-
-## 7. 当前支持范围（A/B/C 边界内）
-
-- A 类低风险自动修复（已冻结白名单）
-- B 类自动检查、报告提示
-- C 类保持人工复核，不自动改写
-- GUI 与 CLI 共用 `runner` 与 `report_builder` 主链路
-
-规则基线与映射参考：
-
-- `rules/FORMAT_RULEBOOK_v3.md`
-- `docs/RULE_TO_ENGINE_MAPPING_TASK-003.md`
-- `docs/V1_OUT_OF_SCOPE_TASK-003.md`
-
-## 8. 当前未支持范围
-
-以下仍为 out-of-scope，不应宣称已支持：
-
-- 封皮模板重建与精细布局重建
+- 封皮模板精细重建
 - 自动目录域重建
-- 正文起始分节与页码系统重构
+- 正文分节页码系统重构
 - 脚注按页重编
-- 装订线版面重排
-- 参考文献内容级语义纠错/复杂重排
+- 复杂语义级参考文献重排/纠错
 
-## 9. 常见问题与失败提示
+## License
 
-- 输入文件不存在：会明确提示 `输入文件不存在`。
-- 输入不是 `.docx`：会明确提示 `输入文件必须是 .docx`。
-- 批量目录为空：会产出 `batch_summary`，并提示未找到 `.docx`。
-- 输出目录不可写：会明确提示 `输出目录不可写/不可创建`。
-- 批量中单个文件失败：不会中断全部任务，会在汇总中显示该文件 `exit_code` 与错误信息。
-- GUI 运行失败：显示可理解错误信息，不向普通用户直出 Python traceback。
+MIT，见 `LICENSE`。
 
-## 10. 规则来源
+## Maintainer Status
 
-- `rules/FORMAT_RULEBOOK_v3.md`
-- `rules/FORMAT_RULEBOOK_v2.md`
-- `rules/sources/FORMAT_RULEBOOK_v1.md`
-- `rules/sources/8. 毕业论文正文写作格式要求.docx`
-- `rules/sources/10.1论文封皮.pdf`
-- `rules/sources/太院教字[2021]03号太原学院毕业论文（设计）管理办法（终稿）.pdf`
+- 当前状态：维护中（best-effort）
+- 不承诺对所有学校规范开箱即用
+- 欢迎通过 issue/PR 提供可复现样例与最小测试
