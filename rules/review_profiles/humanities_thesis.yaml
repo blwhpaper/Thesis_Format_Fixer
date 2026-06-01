@@ -1,0 +1,21 @@
+profile_id: humanities_thesis
+schema_version: 1
+display_name: Humanities Thesis Review Strategy
+language: zh-CN
+scope: |
+  Policy-only review profile for humanities thesis review focus.
+review_rules:
+  - rule_id: RP-HUM-001
+    category: argumentation
+    severity: warning
+    message_template: 检查论证链条是否完整，是否存在跳步推理。
+    anchor_strategy: paragraph
+    comment_allowed: true
+    auto_rewrite_allowed: false
+  - rule_id: RP-HUM-002
+    category: evidence
+    severity: error
+    message_template: 检查史料或文本证据与结论之间的对应关系。
+    anchor_strategy: keyword_in_paragraph
+    comment_allowed: true
+    auto_rewrite_allowed: false

@@ -25,3 +25,5 @@
 - Word Review Adapter Minimal Implementation (TASK-THESIS-OSS-005B): baseline comment-only adapter skeleton landed (apply/skip/duplicate/unsupported), no raw OOXML, no track changes.
 - Word Review Adapter Real DOCX Integration Test (TASK-THESIS-OSS-005C): landed real python-docx save/reopen comment integration coverage while keeping adapter comment-only.
 - Word Review Adapter Feasibility Freeze (TASK-THESIS-OSS-005): done, V1 boundary frozen as comment-only adapter contract and safety invariants; runtime wiring deferred as explicit opt-in.
+
+- Review Profiles minimal strategy layer (TASK-THESIS-OSS-006): profile schema/validation/examples/tests added; runner/cli wiring deferred.

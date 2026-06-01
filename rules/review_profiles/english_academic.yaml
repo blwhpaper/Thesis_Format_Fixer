@@ -1,0 +1,21 @@
+profile_id: english_academic
+schema_version: 1
+display_name: English Academic Review Strategy
+language: en
+scope: |
+  Policy-only review profile for English-language academic writing.
+review_rules:
+  - rule_id: RP-ENG-001
+    category: language
+    severity: warning
+    message_template: Clarify tense consistency in this sentence.
+    anchor_strategy: paragraph_run
+    comment_allowed: true
+    auto_rewrite_allowed: false
+  - rule_id: RP-ENG-002
+    category: citation
+    severity: error
+    message_template: Verify citation style consistency with target guideline.
+    anchor_strategy: keyword_in_paragraph
+    comment_allowed: true
+    auto_rewrite_allowed: false

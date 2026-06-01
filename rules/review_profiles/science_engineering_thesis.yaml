@@ -1,0 +1,21 @@
+profile_id: science_engineering_thesis
+schema_version: 1
+display_name: Science and Engineering Thesis Review Strategy
+language: zh-CN
+scope: |
+  Policy-only review profile for science/engineering thesis review focus.
+review_rules:
+  - rule_id: RP-STE-001
+    category: methodology
+    severity: warning
+    message_template: 检查方法描述是否可复现，关键参数是否完整。
+    anchor_strategy: paragraph
+    comment_allowed: true
+    auto_rewrite_allowed: false
+  - rule_id: RP-STE-002
+    category: data_integrity
+    severity: critical
+    message_template: 核对数据口径、单位与图表结论是否一致。
+    anchor_strategy: paragraph_run
+    comment_allowed: true
+    auto_rewrite_allowed: false
