@@ -9,14 +9,14 @@
 ## 2. 本次实际核验文件
 
 - 已读取：
-  - `/Users/apple/Projects/Thesis_Format_Fixer/README.md`
-  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/FORMAT_RULEBOOK_v1.md`（仓库骨架版）
-  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/FORMAT_RULEBOOK_v1.md`（完整 v1）
-  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/8. 毕业论文正文写作格式要求.docx`（可提取文本）
-  - `/Users/apple/Projects/Thesis_Format_Fixer/rules/sources/10.1论文封皮.pdf`（文件可读，文本提取不稳定）
+  - `/path/to/Thesis_Format_Fixer/README.md`
+  - `/path/to/Thesis_Format_Fixer/rules/FORMAT_RULEBOOK_v1.md`（仓库骨架版）
+  - `/path/to/Thesis_Format_Fixer/rules/sources/FORMAT_RULEBOOK_v1.md`（完整 v1）
+  - `/path/to/Thesis_Format_Fixer/rules/sources/example_thesis_guideline.docx`（可提取文本）
+  - `/path/to/Thesis_Format_Fixer/rules/sources/example_cover_template.pdf`（文件可读，文本提取不稳定）
 - 复核口径：
   - 原始依据文件已纳入仓库 `rules/sources/`，本轮以仓库内源文件为准。
-  - 早期 `/mnt/data` 路径缺失属于历史执行环境差异，不再作为当前证据缺口。
+- 早期历史路径差异不再作为当前证据缺口。
 
 ## 3. 逐项对齐
 

@@ -27,3 +27,14 @@ dist/
 # Runtime outputs
 runs/
 .DS_Store
+
+# Private source materials (never commit)
+rules/sources/private/
+rules/sources/*.pdf
+rules/sources/*.doc
+rules/sources/*.docx
+**/*thesis*.docx
+**/*policy*.pdf
+**/*guideline*.docx
+samples/input/
+samples/output/

@@ -18,7 +18,7 @@
   - `docs/RULE_TO_ENGINE_MAPPING_TASK-003.md` 最小补丁（新增 rule_id 与 v1_decision）
   - 审查输出文案口径更新清单
   - 两条规则的最小审查接入（英文《》审查、D 类页码审查）
-  - 新增管理办法源文件核验记录（证据链闭环留档）
+  - 新增policy document源文件核验记录（证据链闭环留档）
 - 是否涉及代码改动：是（最小改动，限定 review/check/report 链路）。
 
 ## TASK-018 参考文献与英文标点专项增强

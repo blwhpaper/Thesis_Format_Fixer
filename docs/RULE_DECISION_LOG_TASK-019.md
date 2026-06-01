@@ -2,7 +2,7 @@
 
 ## 1. 本轮采用的规则依据优先级
 
-1. 学校原始规范来源（含本轮新增管理办法文件）
+1. 学校原始规范来源（含本轮新增policy document文件）
 2. 项目补充决议（用于处理来源缺口、冲突或工程可执行性收口）
 3. 冻结版规则手册（`rules/FORMAT_RULEBOOK_v3.md`）
 4. 后续实现与映射文档（`docs/RULE_TO_ENGINE_MAPPING_TASK-003.md` 等）

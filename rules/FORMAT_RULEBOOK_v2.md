@@ -17,19 +17,19 @@
 
 - 当前复核依据（仓库内源文件）：
   - `rules/sources/FORMAT_RULEBOOK_v1.md`（完整 v1）
-  - `rules/sources/8. 毕业论文正文写作格式要求.docx`（可提取文本）
-  - `rules/sources/10.1论文封皮.pdf`（文件可读；文本提取能力存在限制）
+  - `rules/sources/example_thesis_guideline.docx`（可提取文本）
+  - `rules/sources/example_cover_template.pdf`（文件可读；文本提取能力存在限制）
   - `rules/FORMAT_RULEBOOK_v1.md`（仓库内骨架版）
 - 口径说明：
   - 原始依据文件已正式纳入仓库 `rules/sources/`。
   - TASK-002 修补轮改以仓库内源文件为准进行复核。
-  - 早期执行环境的 `/mnt/data` 路径缺失不再构成当前项目证据缺口。
+- 早期执行环境的历史路径差异不再构成当前项目证据缺口。
 
 ## 4. 冻结范围（16 个板块）
 
 ### 4.1 中文/英文封皮
 
-- 中文封皮应使用“太原学院本科毕业论文（设计）”专用封皮。
+- 中文封皮应使用“Example University Undergraduate Thesis”专用封皮。
 - 英文封皮自行制作并在 A4 纸打印。
 - 封皮字段存在性可检查；封皮模板重建不纳入自动修改。
 - PDF 样例细粒度版式（精确坐标/间距/logo 相对位置）受文本提取能力限制；可基于样例页面进行字段级人工核对。

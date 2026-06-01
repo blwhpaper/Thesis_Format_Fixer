@@ -68,13 +68,13 @@ def test_parse_standard_english_book_entry_m() -> None:
 
 
 def test_parse_standard_chinese_thesis_entry_d() -> None:
-    parsed = parse_reference_entry("[3] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院, 2023.")
+    parsed = parse_reference_entry("[3] 王强. 基于语料库的翻译研究[D]. Example City: Example University, 2023.")
 
     assert parsed.entry_type == "thesis"
     assert parsed.type_code == "D"
     assert parsed.language_hint in {"zh", "mixed"}
-    assert parsed.publication_place == "太原"
-    assert parsed.publisher == "太原学院"
+    assert parsed.publication_place == "Example City"
+    assert parsed.publisher == "Example University"
     assert parsed.year == "2023"
     assert parsed.parse_confidence == "high"
 

@@ -3,7 +3,7 @@
 ## 1. 本轮新增规则源
 
 - 新增纳入规则依据体系的学校文件：
-  - `rules/sources/太院教字[2021]03号太原学院毕业论文（设计）管理办法（终稿）.pdf`
+  - `rules/sources/sample_undergraduate_thesis_policy.pdf`
 - 实际核验结果（基于本轮读取）：
   - 文件实体存在且可读（`file` 识别为 PDF 1.3）。
   - 当前环境无法对该文件进行稳定 OCR；`textutil` 仅能读取 PDF 二进制流而非可引用正文文本。
@@ -12,7 +12,7 @@
 ## 2. 与旧规则源一致的内容
 
 基于已读取文件：
-- `rules/sources/8. 毕业论文正文写作格式要求.docx`
+- `rules/sources/example_thesis_guideline.docx`
 - `rules/sources/FORMAT_RULEBOOK_v1.md`
 - `rules/FORMAT_RULEBOOK_v2.md`
 - `rules/FORMAT_RULEBOOK_v3.md`（升级前版本）
@@ -38,7 +38,7 @@
 
 ## 4. 仅属管理性/流程性、不纳入引擎的内容
 
-结合新增学校管理办法文件名定位（“管理办法”）与现有实现边界文档，本轮继续不纳入引擎的管理流程类内容包括：
+结合新增学校policy document文件名定位（“policy document”）与现有实现边界文档，本轮继续不纳入引擎的管理流程类内容包括：
 - 任务组织、提交流程、阶段性管理要求等管理条款。
 - 需人工审批或教学过程管理的条款。
 - 无法稳定映射到 docx 结构检查/修复动作的制度性表述。
@@ -56,7 +56,7 @@
 
 ## 6. 与旧源的冲突事实（保留记录）
 
-来自 `rules/sources/8. 毕业论文正文写作格式要求.docx` 的冲突事实：
+来自 `rules/sources/example_thesis_guideline.docx` 的冲突事实：
 - 该源给出的“专著、学位论文、报告”示例模板包含“起止页码”字段。
 - 其中示例 `[12] ... [D]. ... 98-100.` 明确出现 D 类页码。
 

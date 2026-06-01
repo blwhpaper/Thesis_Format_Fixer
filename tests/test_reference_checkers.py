@@ -141,7 +141,7 @@ def test_runner_report_exposes_reference_checker_statistics_and_samples(tmp_path
         body=[
             "REFERENCES",
             "[1] Smith J. A practical testing framework[J]. Journal of Testing, 2024(3): 10-20.",
-            "[2] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院.",
+            "[2] 王强. 基于语料库的翻译研究[D]. Example City: Example University.",
             "[3] random non-standard entry",
             "致谢",
         ],

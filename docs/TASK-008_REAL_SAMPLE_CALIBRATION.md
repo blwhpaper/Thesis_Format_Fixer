@@ -2,7 +2,7 @@
 
 ## 1. 回灌样本
 
-- 样本文件：`runs/test_run_001/test_thesis_fixed.docx`
+- 样本文件：`runs/sample_run_001/example_thesis_fixed.docx`
 - 校准日期：2026-04-18
 - 输出目录：`runs/task008_calibration/`
 
@@ -10,13 +10,13 @@
 
 ```bash
 PYTHONPATH=src python3 -m thesis_format_fixer.cli check \
-  runs/test_run_001/test_thesis_fixed.docx \
+  runs/sample_run_001/example_thesis_fixed.docx \
   --report-json runs/task008_calibration/check.report.json \
   --report-md runs/task008_calibration/check.report.md
 
 PYTHONPATH=src python3 -m thesis_format_fixer.cli fix \
-  runs/test_run_001/test_thesis_fixed.docx \
-  --out runs/task008_calibration/test_thesis_fixed.task008.fixed.docx \
+  runs/sample_run_001/example_thesis_fixed.docx \
+  --out runs/task008_calibration/example_thesis_fixed.task008.fixed.docx \
   --report-json runs/task008_calibration/fix.report.json \
   --report-md runs/task008_calibration/fix.report.md
 ```

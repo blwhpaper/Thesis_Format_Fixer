@@ -4,13 +4,16 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+
 from thesis_format_fixer.app.runner import run_check, run_fix
 
 
 def test_task008_real_sample_has_non_footnote_a_class_hits(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parents[1]
-    source = repo_root / "runs" / "test_run_001" / "test_thesis_fixed.docx"
-    assert source.exists(), "real sample docx is required for TASK-008 calibration"
+    source = repo_root / "runs" / "sample_run_001" / "example_thesis_fixed.docx"
+    if not source.exists():
+        pytest.skip("sample calibration docx is not present in public repo")
 
     input_docx = tmp_path / "sample.docx"
     shutil.copy2(source, input_docx)

@@ -203,7 +203,7 @@ def test_reference_d_type_pages_review_warns_on_d_entry_with_pages(tmp_path: Pat
         docx,
         body=[
             "REFERENCES",
-            "[1] 王强. 基于语料库的翻译研究[D]. 太原: 太原学院, 2023, 98-100.",
+            "[1] 王强. 基于语料库的翻译研究[D]. Example City: Example University, 2023, 98-100.",
             "致谢",
         ],
     )

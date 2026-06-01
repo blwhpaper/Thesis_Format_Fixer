@@ -12,8 +12,8 @@ This file is the canonical machine-readable rulebook placeholder for thesis-form
 
 ## Source Basis
 
-- rules/sources/10.1论文封皮.pdf
-- rules/sources/8. 毕业论文正文写作格式要求.docx
+- rules/sources/example_cover_template.pdf
+- rules/sources/example_thesis_guideline.docx
 
 ## Status
 
