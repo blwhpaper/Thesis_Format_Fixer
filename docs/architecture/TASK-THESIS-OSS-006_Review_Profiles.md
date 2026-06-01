@@ -46,3 +46,11 @@ Notes:
 - No direct `.docx` write-back in this task.
 - No Track Changes.
 - No body auto-rewrite.
+
+## 7. 006A Contract Mapping Addendum
+- Added a minimal typed mapping layer (`review/contracts.py`) between `ReviewRule` and `WordReviewAdapter.ReviewFinding`.
+- Mapping enforces safety invariants:
+  - `auto_rewrite_allowed` must stay `false`
+  - `comment_allowed` must stay `true`
+  - `body_text_mutation_allowed` must stay `false`
+- Missing anchor position (`paragraph_index`) is emitted as skipped-ready mapping result and is never fabricated.
