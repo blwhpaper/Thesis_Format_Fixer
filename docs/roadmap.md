@@ -30,3 +30,4 @@
 - OSS Release & Codex Application Readiness (TASK-THESIS-OSS-007): done, repository audited for public safety, package readiness, and Codex agent instructions frozen.
 - Review E2E Contract Harness (TASK-THESIS-P2-001): done, established E2E contract test for structured findings mapping to WordReviewAdapter.
 - CLI review --findings Minimal Write-back (TASK-THESIS-P2-002): done, added minimal opt-in CLI command to write structured findings into docx comments and generate report.
+- Real Sample Review Smoke Test (TASK-THESIS-P2-003): done, implemented dynamic, sanitized, realistic .docx fixture to smoke test the review pipeline without hardcoded private rules.
