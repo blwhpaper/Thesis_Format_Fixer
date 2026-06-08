@@ -1,23 +1,69 @@
 # Thesis Format Fixer - Contributor & Agent Protocol
 
 ## 1. Project Purpose
+
 Word-first thesis format fixer, public OSS safe, configurable profiles.
 
-## 2. Runtime Source of Truth
-- 原始规范文件优先 (Original specification files take precedence)
-- rulebook 是工程化翻译层 (The rulebook is an engineering translation layer)
-- tests 是行为回归约束 (Tests serve as behavioral regression constraints)
-- generated outputs 不得反推规则 (Generated outputs must not be reverse-engineered to infer rules)
+## 2. Unique Startup Chain
 
-## 3. Required Startup Protocol
-When starting a new session or task, you must strictly follow this order:
-1. 先读 CLAUDE.md (Read this file first).
-2. 查 `git status` (Check current git status).
-3. 识别当前任务、分支、允许修改范围 (Identify current task, branch, and allowed modification scope).
-4. 审计架构、数据流、职责边界、风险 (Audit architecture, data flow, responsibility boundaries, and risks).
-5. 再做最小修改 (Only then, make the minimal necessary modifications).
+Every new implementation or review session must follow exactly this chain:
 
-## 4. Engineering Invariants
+1. `AGENTS.md` or `CLAUDE.md`
+2. `docs/roadmap.md`
+3. `docs/governance/TASK_STATE.md`
+4. `docs/governance/TASK_INDEX.md`
+5. current task card
+6. previous closeout
+7. `git status --short --branch`
+
+Do not treat chat history or model memory as a valid shortcut.
+
+## 3. Conflict Precedence
+
+Use this strict precedence when instructions conflict:
+
+`repo current state > AGENTS.md/CLAUDE.md > docs/roadmap.md > TASK_STATE > TASK_INDEX > current task card > previous closeout > chat history/model memory`
+
+## 4. Current Route
+
+- `TASK-THESIS-P2-001`: completed
+- `TASK-THESIS-P2-002`: completed
+- `TASK-THESIS-P2-003`: completed
+- `TASK-THESIS-P2-004`: completed
+- `current/next = TASK-THESIS-P2-005 Anchor-aware Idempotency`
+
+## 5. Runtime Source of Truth
+
+- repo current state is authoritative for what actually exists
+- original specification files remain policy provenance
+- rulebook is the engineering translation layer
+- tests are behavioral regression constraints
+- generated outputs must not be reverse-engineered to infer rules
+- historical audits may explain why decisions were made, but they are not the runtime task pointer once superseded
+
+## 6. Allowed Modification Scope
+
+- `src/`
+- `tests/`
+- `docs/`
+- `README.md`
+- `CLAUDE.md`
+- `AGENTS.md`
+
+Only modify `README.md` / `CLAUDE.md` / `AGENTS.md` when governance-related.
+
+## 7. Forbidden Scope
+
+- no private school rules
+- no LaTeX pipeline
+- no Microsoft Word COM dependency
+- no Office.js dependency
+- no hidden auto-rewrite
+- Word-first
+- profile-first
+
+## 8. Engineering Invariants
+
 - preserve original document content
 - formatting changes must be auditable
 - no silent content rewriting
@@ -25,25 +71,39 @@ When starting a new session or task, you must strictly follow this order:
 - high-risk Word structure changes should be report/check first, not auto-fix first
 - profile/rule conflict must be explicit
 
-## 5. Branch/Task Rule
+## 9. Branch/Task Rule
+
 - one task = one short-lived branch
 - no long-lived business branch
 - main must stay releasable
 
-## 6. Validation Protocol
-Before committing or finalizing changes, you must:
-- run relevant pytest
-- run `git diff --check`
-- inspect `git diff` before commit
-- report skipped validation with reason
+## 10. Validation Protocol
 
-## 7. Closeout Protocol
-When finishing a task, your final report must include:
+Before committing or finalizing changes, run:
+
+- `git status --short --branch`
+- `git diff --check`
+- `.venv/bin/python -m pytest -q`
+- package/import smoke if available
+
+Suggested smoke command:
+
+- `PYTHONPATH=src .venv/bin/python -c "import thesis_format_fixer"`
+
+Inspect the diff before commit and report any skipped validation with reason.
+
+## 11. Closeout Protocol
+
+When finishing a task, the closeout must include:
+
 - changed files
 - validation commands/results
-- unresolved architecture debt
+- unresolved architecture debt or governance gaps
 - next task recommendation
 
-## 8. Current Roadmap Pointer
-- TASK-THESIS-OSS-004 Generic Format Profile Engine is next after governance setup unless user overrides
-- do not jump to review adapter before profile engine unless explicitly instructed
+## 12. Runtime Governance Files
+
+- `docs/governance/TASK_STATE.md` is the runtime task pointer
+- `docs/governance/TASK_INDEX.md` is the ordered task registry
+- task cards define current task scope and acceptance
+- closeouts define previous handoff context

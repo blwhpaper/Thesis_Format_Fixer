@@ -84,7 +84,15 @@ python -m thesis_format_fixer.gui
 
 ## Contributor / Agent Protocol
 
-See [`CLAUDE.md`](CLAUDE.md) for governance, invariants, and operational rules before modifying this repository.
+Read governance in this order before modifying the repository:
+
+1. [`AGENTS.md`](AGENTS.md)
+2. [`CLAUDE.md`](CLAUDE.md)
+3. [`docs/roadmap.md`](docs/roadmap.md)
+4. `docs/governance/TASK_STATE.md`
+5. `docs/governance/TASK_INDEX.md`
+
+Historical governance audits remain for provenance, but the files above are the runtime truth for task startup and handoff.
 
 ## License
 
