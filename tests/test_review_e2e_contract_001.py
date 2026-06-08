@@ -40,7 +40,7 @@ def sample_structured_findings() -> list[StructuredReviewFinding]:
             anchor_strategy="paragraph",
             paragraph_index=0,
             run_index=0,
-            anchor_text="Test",
+            anchor_text="First paragraph.",
         ),
         # Invalid finding: missing paragraph_index (error/fallback boundary test)
         StructuredReviewFinding(

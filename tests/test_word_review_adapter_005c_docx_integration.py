@@ -94,3 +94,76 @@ def test_adapter_idempotent_after_save_reopen_real_docx(tmp_path) -> None:
     reopened = Document(path)
     assert len(list(reopened.comments)) == 1
     assert reopened.paragraphs[0].text == "Heading sample"
+
+
+def test_adapter_allows_same_comment_text_on_different_real_docx_anchor(tmp_path) -> None:
+    Document = _load_docx_api()
+    path = tmp_path / "same-comment-different-anchor.docx"
+
+    document = Document()
+    document.add_paragraph("Heading sample")
+    document.add_paragraph("Heading sample")
+    document.save(path)
+
+    adapter = WordReviewAdapter()
+    findings = [
+        ReviewFinding(
+            rule_id="FR-4.8-01",
+            message="Heading format mismatch.",
+            paragraph_index=0,
+            run_index=0,
+        ),
+        ReviewFinding(
+            rule_id="FR-4.8-01",
+            message="Heading format mismatch.",
+            paragraph_index=1,
+            run_index=0,
+        ),
+    ]
+
+    loaded = Document(path)
+    result = adapter.apply_findings(loaded, findings)
+    loaded.save(path)
+
+    assert result.added == 2
+    assert result.duplicate == 0
+
+    reopened = Document(path)
+    assert len(list(reopened.comments)) == 2
+
+
+def test_adapter_skips_when_anchor_text_moved_after_reopen(tmp_path) -> None:
+    Document = _load_docx_api()
+    path = tmp_path / "anchor-text-moved.docx"
+
+    document = Document()
+    paragraph = document.add_paragraph()
+    paragraph.add_run("Alpha ")
+    paragraph.add_run("Beta")
+    document.save(path)
+
+    adapter = WordReviewAdapter()
+    finding = ReviewFinding(
+        rule_id="FR-4.9-02",
+        message="Use halfwidth punctuation.",
+        paragraph_index=0,
+        run_index=1,
+        anchor_text="Beta",
+    )
+
+    first = Document(path)
+    first_result = adapter.apply_findings(first, [finding])
+    first.save(path)
+    assert first_result.added == 1
+
+    moved = Document(path)
+    moved.paragraphs[0].runs[1].text = "Gamma"
+    moved.save(path)
+
+    reopened = Document(path)
+    second_result = adapter.apply_findings(reopened, [finding])
+
+    assert second_result.added == 0
+    assert second_result.skipped == 1
+    assert second_result.details[0]["reason"] == "anchor_text_not_found_in_run"
+    assert reopened.paragraphs[0].text == "Alpha Gamma"
